@@ -79,9 +79,10 @@ dustContext.fillRect(0, 0, 32, 32)
 
 const dustGeometry = new THREE.BufferGeometry()
 dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3))
+const dustTexture = new THREE.CanvasTexture(dustCanvas)
 const dust = new THREE.Points(dustGeometry, new THREE.PointsMaterial({
     color: 0xfff4d6,
-    map: new THREE.CanvasTexture(dustCanvas),
+    map: dustTexture,
     size: 0.045,
     transparent: true,
     opacity: 0.38,
@@ -90,6 +91,138 @@ const dust = new THREE.Points(dustGeometry, new THREE.PointsMaterial({
     sizeAttenuation: true
 }))
 scene.add(dust)
+
+// Ten sam proceduralny „niezidentyfikowany obiekt” co w scenie 03.
+const specterGroup = new THREE.Group()
+const specterBasePosition = new THREE.Vector3(0, 2.0, 0)
+specterGroup.position.copy(specterBasePosition)
+scene.add(specterGroup)
+
+const specterGeometry = new THREE.IcosahedronGeometry(0.62, 3)
+const specterPositionAttribute = specterGeometry.attributes.position
+const specterBaseVertices = new Float32Array(specterPositionAttribute.array)
+const specterMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+        uTime: { value: 0 },
+        uColorA: { value: new THREE.Color(0x57f6ff) },
+        uColorB: { value: new THREE.Color(0xb45cff) }
+    },
+    vertexShader: `
+        varying vec3 vNormal;
+        varying vec3 vViewDirection;
+        varying vec3 vLocalPosition;
+        void main() {
+            vLocalPosition = position;
+            vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
+            vNormal = normalize(normalMatrix * normal);
+            vViewDirection = normalize(-viewPosition.xyz);
+            gl_Position = projectionMatrix * viewPosition;
+        }
+    `,
+    fragmentShader: `
+        uniform float uTime;
+        uniform vec3 uColorA;
+        uniform vec3 uColorB;
+        varying vec3 vNormal;
+        varying vec3 vViewDirection;
+        varying vec3 vLocalPosition;
+        void main() {
+            float fresnel = pow(1.0 - abs(dot(vNormal, vViewDirection)), 2.2);
+            float energyBand = 0.5 + 0.5 * sin(vLocalPosition.y * 13.0 - uTime * 2.2 + vLocalPosition.x * 5.0);
+            float colorShift = 0.5 + 0.5 * sin(uTime * 0.75 + vLocalPosition.x * 4.0 + vLocalPosition.z * 3.0);
+            vec3 color = mix(uColorA, uColorB, colorShift);
+            float alpha = 0.055 + fresnel * 0.5 + energyBand * 0.09;
+            gl_FragColor = vec4(color, alpha);
+        }
+    `,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending
+})
+
+const specterCore = new THREE.Mesh(specterGeometry, specterMaterial)
+specterGroup.add(specterCore)
+
+const specterWireMaterial = new THREE.MeshBasicMaterial({
+    color: 0x8dfbff,
+    transparent: true,
+    opacity: 0.3,
+    wireframe: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+})
+const specterWire = new THREE.Mesh(specterGeometry, specterWireMaterial)
+specterWire.scale.setScalar(1.018)
+specterGroup.add(specterWire)
+
+const specterRingMaterialA = new THREE.MeshBasicMaterial({
+    color: 0x63f5ff,
+    transparent: true,
+    opacity: 0.32,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+})
+const specterRingMaterialB = new THREE.MeshBasicMaterial({
+    color: 0xc16dff,
+    transparent: true,
+    opacity: 0.26,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+})
+const specterRings = [
+    new THREE.Mesh(new THREE.TorusGeometry(0.92, 0.009, 8, 96), specterRingMaterialA),
+    new THREE.Mesh(new THREE.TorusGeometry(1.08, 0.007, 8, 96), specterRingMaterialB),
+    new THREE.Mesh(new THREE.TorusGeometry(0.78, 0.006, 8, 96), specterRingMaterialA)
+]
+specterRings[0].rotation.set(1.15, 0.25, 0.1)
+specterRings[1].rotation.set(0.45, 1.1, 0.7)
+specterRings[2].rotation.set(0.2, 0.75, 1.25)
+for (const ring of specterRings) specterGroup.add(ring)
+
+const specterElectronGeometry = new THREE.SphereGeometry(0.026, 12, 12)
+const specterElectrons = []
+const electronConfigurations = [
+    { ringIndex: 0, radius: 0.92, speed: 1.45, phase: 0.2, color: 0xbffcff },
+    { ringIndex: 0, radius: 0.92, speed: -0.92, phase: 2.5, color: 0xffffff },
+    { ringIndex: 0, radius: 0.92, speed: 2.1, phase: 4.4, color: 0x73f4ff },
+    { ringIndex: 1, radius: 1.08, speed: 0.72, phase: 1.3, color: 0xe4b6ff },
+    { ringIndex: 1, radius: 1.08, speed: -1.28, phase: 4.0, color: 0xffffff },
+    { ringIndex: 2, radius: 0.78, speed: 2.55, phase: 0.8, color: 0x9efcff },
+    { ringIndex: 2, radius: 0.78, speed: -1.75, phase: 3.1, color: 0xd59cff },
+    { ringIndex: 2, radius: 0.78, speed: 1.08, phase: 5.2, color: 0xffffff }
+]
+
+for (const configuration of electronConfigurations) {
+    const electronGroup = new THREE.Group()
+    const electronCore = new THREE.Mesh(
+        specterElectronGeometry,
+        new THREE.MeshBasicMaterial({
+            color: configuration.color,
+            transparent: true,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        })
+    )
+    const electronGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: dustTexture,
+        color: configuration.color,
+        transparent: true,
+        opacity: 0.72,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+    }))
+    electronGlow.scale.setScalar(0.19)
+    electronGroup.add(electronCore, electronGlow)
+    specterRings[configuration.ringIndex].add(electronGroup)
+    specterElectrons.push({ group: electronGroup, glow: electronGlow, ...configuration })
+}
+
+const specterLight = new THREE.PointLight(0x7f8cff, 4.2, 5, 2)
+specterGroup.add(specterLight)
+const specterTag = document.querySelector('.fabryczka-tag')
+const specterTagWorld = new THREE.Vector3()
+let specterTagFocused = false
 
 
 /**
@@ -241,8 +374,8 @@ window.addEventListener('resize', () =>
  */
 // Base camera
 const camera = new THREE.PerspectiveCamera(65, sizes.width / sizes.height, 0.1, 60)
-const eyeHeight = 1.65
-const visitorRadius = 0.25
+const eyeHeight = 1.45
+const visitorRadius = 0.16
 const walkSpeed = 5
 camera.position.set(-3, eyeHeight, 3)
 scene.add(camera)
@@ -349,6 +482,10 @@ startButton.addEventListener('click', () => {
     requestMuseumControls()
 })
 canvas.addEventListener('click', () => {
+    if (document.pointerLockElement === canvas && specterTagFocused) {
+        window.open('https://rysunekzfabryczka.pl/', '_blank', 'noopener,noreferrer')
+        return
+    }
     if (document.pointerLockElement !== canvas) requestMuseumControls()
 })
 
@@ -409,6 +546,59 @@ const updateDust = (deltaTime, elapsedTime) => {
     dustGeometry.attributes.position.needsUpdate = true
 }
 
+const updateSpecter = (elapsedTime) => {
+    const positions = specterPositionAttribute.array
+    for (let vertexIndex = 0; vertexIndex < specterPositionAttribute.count; vertexIndex++) {
+        const arrayIndex = vertexIndex * 3
+        const baseX = specterBaseVertices[arrayIndex]
+        const baseY = specterBaseVertices[arrayIndex + 1]
+        const baseZ = specterBaseVertices[arrayIndex + 2]
+        const geometricPulse = Math.sin(elapsedTime * 1.65 + baseX * 8 + baseY * 6 - baseZ * 7) * 0.22
+        const slowMorph = Math.sin(elapsedTime * 0.72 + (baseX + baseZ) * 4) * 0.13
+        const scale = 1 + geometricPulse + slowMorph
+        positions[arrayIndex] = baseX * scale
+        positions[arrayIndex + 1] = baseY * (scale + Math.sin(elapsedTime) * 0.08)
+        positions[arrayIndex + 2] = baseZ * scale
+    }
+    specterPositionAttribute.needsUpdate = true
+    specterGeometry.computeVertexNormals()
+    specterMaterial.uniforms.uTime.value = elapsedTime
+    specterGroup.position.set(
+        specterBasePosition.x + Math.sin(elapsedTime * 0.55) * 0.38,
+        specterBasePosition.y + Math.sin(elapsedTime * 0.92) * 0.24,
+        specterBasePosition.z + Math.cos(elapsedTime * 0.48) * 0.3
+    )
+    specterGroup.rotation.y += 0.0045
+    specterGroup.rotation.x = Math.sin(elapsedTime * 0.37) * 0.22
+    specterRings[0].rotation.z += 0.006
+    specterRings[1].rotation.x -= 0.004
+    specterRings[2].rotation.y += 0.007
+
+    specterElectrons.forEach((electron, index) => {
+        const angle = elapsedTime * electron.speed + electron.phase
+        electron.group.position.set(
+            Math.cos(angle) * electron.radius,
+            Math.sin(angle) * electron.radius,
+            Math.sin(elapsedTime * (1.4 + index * 0.09) + electron.phase) * 0.018
+        )
+        electron.glow.scale.setScalar(0.19 * (1 + Math.sin(elapsedTime * 5 + electron.phase) * 0.18))
+    })
+    specterWireMaterial.opacity = 0.24 + Math.sin(elapsedTime * 2.4) * 0.08
+    specterLight.intensity = 3.6 + Math.sin(elapsedTime * 1.8) * 0.8
+
+    specterGroup.getWorldPosition(specterTagWorld)
+    specterTagWorld.y += 1.05
+    specterTagWorld.project(camera)
+    const inFront = specterTagWorld.z > -1 && specterTagWorld.z < 1
+    specterTagFocused = inFront && Math.abs(specterTagWorld.x) < 0.2 && Math.abs(specterTagWorld.y) < 0.2
+    specterTag.classList.toggle('is-gazed', specterTagFocused)
+    specterTag.hidden = !inFront
+    if (inFront) {
+        specterTag.style.left = `${(specterTagWorld.x * 0.5 + 0.5) * sizes.width}px`
+        specterTag.style.top = `${(-specterTagWorld.y * 0.5 + 0.5) * sizes.height}px`
+    }
+}
+
 /**
  * Renderer
  */
@@ -443,6 +633,7 @@ const tick = () =>
 
     updateWalkControls(deltaTime)
     updateDust(deltaTime, elapsedTime)
+    updateSpecter(elapsedTime)
 
     // Render
     renderer.render(scene, camera)
