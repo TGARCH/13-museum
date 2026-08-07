@@ -484,7 +484,7 @@ startButton.addEventListener('click', () => {
 })
 canvas.addEventListener('click', () => {
     if (document.pointerLockElement === canvas && specterTagFocused) {
-        window.open('https://rysunekzfabryczka.pl/', '_blank', 'noopener,noreferrer')
+        window.open('https://rysunekzfabryczka.pl/#e-booki', '_blank', 'noopener,noreferrer')
         return
     }
     if (document.pointerLockElement !== canvas) requestMuseumControls()
