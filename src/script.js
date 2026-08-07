@@ -31,7 +31,7 @@ const gltfLoader = new GLTFLoader()
 
 let mixer = null
 
-gltfLoader.load('/models/model3d24_gltf/model3d24.gltf', (gltf) => {
+gltfLoader.load('/models/model3d24_gltf/model3d24_light.gltf', (gltf) => {
     gltf.scene.scale.set(1, 1, 1);
     scene.add(gltf.scene);
     console.log(gltf)
@@ -54,6 +54,42 @@ gltfLoader.load('/models/model3d24_gltf/model3d24.gltf', (gltf) => {
     });
 
 });
+
+// Subtle dust suspended in the gallery air. All particles share one geometry
+// and one material, so the atmosphere costs a single draw call.
+const dustCount = 480
+const dustPositions = new Float32Array(dustCount * 3)
+const dustSpeeds = new Float32Array(dustCount)
+for (let i = 0; i < dustCount; i++) {
+    dustPositions[i * 3] = THREE.MathUtils.randFloat(-13.5, 13.5)
+    dustPositions[i * 3 + 1] = THREE.MathUtils.randFloat(0.25, 5.5)
+    dustPositions[i * 3 + 2] = THREE.MathUtils.randFloat(-13.5, 13.5)
+    dustSpeeds[i] = THREE.MathUtils.randFloat(0.018, 0.055)
+}
+
+const dustCanvas = document.createElement('canvas')
+dustCanvas.width = dustCanvas.height = 32
+const dustContext = dustCanvas.getContext('2d')
+const dustGradient = dustContext.createRadialGradient(16, 16, 0, 16, 16, 16)
+dustGradient.addColorStop(0, 'rgba(255, 246, 220, 0.9)')
+dustGradient.addColorStop(0.25, 'rgba(255, 246, 220, 0.45)')
+dustGradient.addColorStop(1, 'rgba(255, 246, 220, 0)')
+dustContext.fillStyle = dustGradient
+dustContext.fillRect(0, 0, 32, 32)
+
+const dustGeometry = new THREE.BufferGeometry()
+dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3))
+const dust = new THREE.Points(dustGeometry, new THREE.PointsMaterial({
+    color: 0xfff4d6,
+    map: new THREE.CanvasTexture(dustCanvas),
+    size: 0.045,
+    transparent: true,
+    opacity: 0.38,
+    alphaTest: 0.02,
+    depthWrite: false,
+    sizeAttenuation: true
+}))
+scene.add(dust)
 
 
 /**
@@ -220,6 +256,82 @@ const forward = new THREE.Vector3()
 const right = new THREE.Vector3()
 const startPanel = document.querySelector('.start-panel')
 const startButton = document.querySelector('.start-button')
+const soundButton = document.querySelector('.sound-button')
+
+let audioContext = null
+let ambientGain = null
+let musicStarted = false
+let musicMuted = false
+
+const startAmbientMusic = () => {
+    if (musicStarted) {
+        audioContext?.resume()
+        return
+    }
+    musicStarted = true
+    audioContext = new (window.AudioContext || window.webkitAudioContext)()
+    ambientGain = audioContext.createGain()
+    ambientGain.gain.setValueAtTime(0.0001, audioContext.currentTime)
+    ambientGain.gain.exponentialRampToValueAtTime(0.055, audioContext.currentTime + 2.5)
+    ambientGain.connect(audioContext.destination)
+
+    const filter = audioContext.createBiquadFilter()
+    filter.type = 'lowpass'
+    filter.frequency.value = 520
+    filter.Q.value = 0.35
+    filter.connect(ambientGain)
+
+    const chordSets = [
+        [130.81, 196.00, 261.63],
+        [146.83, 220.00, 293.66],
+        [110.00, 164.81, 220.00],
+        [123.47, 185.00, 246.94]
+    ]
+    const pads = chordSets[0].map((frequency, index) => {
+        const oscillator = audioContext.createOscillator()
+        const gain = audioContext.createGain()
+        oscillator.type = index === 1 ? 'triangle' : 'sine'
+        oscillator.frequency.value = frequency
+        gain.gain.value = index === 0 ? 0.24 : 0.13
+        oscillator.connect(gain).connect(filter)
+        oscillator.start()
+        return oscillator
+    })
+
+    let chordIndex = 0
+    window.setInterval(() => {
+        if (!audioContext) return
+        chordIndex = (chordIndex + 1) % chordSets.length
+        const now = audioContext.currentTime
+        pads.forEach((oscillator, index) => {
+            oscillator.frequency.exponentialRampToValueAtTime(chordSets[chordIndex][index], now + 3.5)
+        })
+    }, 9000)
+
+    const chimeNotes = [523.25, 587.33, 659.25, 783.99, 880.00]
+    window.setInterval(() => {
+        if (!audioContext || audioContext.state !== 'running' || musicMuted) return
+        const now = audioContext.currentTime
+        const oscillator = audioContext.createOscillator()
+        const gain = audioContext.createGain()
+        oscillator.type = 'sine'
+        oscillator.frequency.value = chimeNotes[Math.floor(Math.random() * chimeNotes.length)]
+        gain.gain.setValueAtTime(0.0001, now)
+        gain.gain.exponentialRampToValueAtTime(0.035, now + 0.12)
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 3.8)
+        oscillator.connect(gain).connect(ambientGain)
+        oscillator.start(now)
+        oscillator.stop(now + 4)
+    }, 5200)
+}
+
+soundButton.addEventListener('click', (event) => {
+    event.stopPropagation()
+    startAmbientMusic()
+    musicMuted = !musicMuted
+    ambientGain.gain.exponentialRampToValueAtTime(musicMuted ? 0.0001 : 0.055, audioContext.currentTime + 0.35)
+    soundButton.textContent = musicMuted ? 'Włącz muzykę' : 'Wycisz muzykę'
+})
 
 const collidesAt = (x, z) => collisionWalls.some((wall) => {
     const nearestX = THREE.MathUtils.clamp(x, wall.x - wall.halfX, wall.x + wall.halfX)
@@ -230,7 +342,10 @@ const collidesAt = (x, z) => collisionWalls.some((wall) => {
 })
 
 const requestMuseumControls = () => canvas.requestPointerLock()
-startButton.addEventListener('click', requestMuseumControls)
+startButton.addEventListener('click', () => {
+    startAmbientMusic()
+    requestMuseumControls()
+})
 canvas.addEventListener('click', () => {
     if (document.pointerLockElement !== canvas) requestMuseumControls()
 })
@@ -281,6 +396,17 @@ const updateWalkControls = (deltaTime) => {
     camera.position.y = eyeHeight
 }
 
+const updateDust = (deltaTime, elapsedTime) => {
+    const positions = dustGeometry.attributes.position.array
+    for (let i = 0; i < dustCount; i++) {
+        const offset = i * 3
+        positions[offset + 1] += dustSpeeds[i] * deltaTime
+        positions[offset] += Math.sin(elapsedTime * 0.18 + i * 1.7) * 0.002 * deltaTime
+        if (positions[offset + 1] > 5.5) positions[offset + 1] = 0.25
+    }
+    dustGeometry.attributes.position.needsUpdate = true
+}
+
 /**
  * Renderer
  */
@@ -314,6 +440,7 @@ const tick = () =>
     //}
 
     updateWalkControls(deltaTime)
+    updateDust(deltaTime, elapsedTime)
 
     // Render
     renderer.render(scene, camera)
