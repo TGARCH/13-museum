@@ -277,22 +277,22 @@ const startAmbientMusic = () => {
 
     const filter = audioContext.createBiquadFilter()
     filter.type = 'lowpass'
-    filter.frequency.value = 520
-    filter.Q.value = 0.35
+    filter.frequency.value = 1600
+    filter.Q.value = 0.25
     filter.connect(ambientGain)
 
     const chordSets = [
-        [130.81, 196.00, 261.63],
-        [146.83, 220.00, 293.66],
-        [110.00, 164.81, 220.00],
-        [123.47, 185.00, 246.94]
+        [261.63, 329.63, 392.00],
+        [293.66, 369.99, 440.00],
+        [220.00, 277.18, 329.63],
+        [246.94, 311.13, 369.99]
     ]
     const pads = chordSets[0].map((frequency, index) => {
         const oscillator = audioContext.createOscillator()
         const gain = audioContext.createGain()
         oscillator.type = index === 1 ? 'triangle' : 'sine'
         oscillator.frequency.value = frequency
-        gain.gain.value = index === 0 ? 0.24 : 0.13
+        gain.gain.value = index === 0 ? 0.10 : 0.06
         oscillator.connect(gain).connect(filter)
         oscillator.start()
         return oscillator
@@ -304,25 +304,29 @@ const startAmbientMusic = () => {
         chordIndex = (chordIndex + 1) % chordSets.length
         const now = audioContext.currentTime
         pads.forEach((oscillator, index) => {
-            oscillator.frequency.exponentialRampToValueAtTime(chordSets[chordIndex][index], now + 3.5)
+            oscillator.frequency.exponentialRampToValueAtTime(chordSets[chordIndex][index], now + 1.2)
         })
-    }, 9000)
+    }, 6600)
 
-    const chimeNotes = [523.25, 587.33, 659.25, 783.99, 880.00]
+    // A quiet 72 BPM arpeggio gives the background a normal musical pulse
+    // without turning the gallery into a rhythmic soundtrack.
+    const arpeggio = [523.25, 659.25, 783.99, 659.25, 587.33, 739.99, 880.00, 739.99]
+    let arpeggioStep = 0
     window.setInterval(() => {
         if (!audioContext || audioContext.state !== 'running' || musicMuted) return
         const now = audioContext.currentTime
         const oscillator = audioContext.createOscillator()
         const gain = audioContext.createGain()
-        oscillator.type = 'sine'
-        oscillator.frequency.value = chimeNotes[Math.floor(Math.random() * chimeNotes.length)]
+        oscillator.type = 'triangle'
+        oscillator.frequency.value = arpeggio[arpeggioStep % arpeggio.length]
+        arpeggioStep++
         gain.gain.setValueAtTime(0.0001, now)
-        gain.gain.exponentialRampToValueAtTime(0.035, now + 0.12)
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 3.8)
+        gain.gain.exponentialRampToValueAtTime(0.045, now + 0.035)
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.15)
         oscillator.connect(gain).connect(ambientGain)
         oscillator.start(now)
-        oscillator.stop(now + 4)
-    }, 5200)
+        oscillator.stop(now + 1.2)
+    }, 833)
 }
 
 soundButton.addEventListener('click', (event) => {
