@@ -308,38 +308,56 @@ const startAmbientMusic = () => {
         })
     }, 5217)
 
-    // A bright C-major pentatonic motif at 92 BPM. Short sine tones and a
-    // quiet overtone resemble a soft marimba with an occasional bell sparkle.
-    const arpeggio = [523.25, 659.25, 783.99, 880.00, 783.99, 659.25, 587.33, 659.25,
-        523.25, 659.25, 783.99, 1046.50, 0, 783.99, 659.25, 587.33]
+    // Original, jaunty 2/4 workshop-cartoon motif at 104 BPM. The melody uses
+    // playful pauses and small rhythmic stumbles without quoting any theme.
+    const arpeggio = [392.00, 523.25, 659.25, 587.33, 523.25, 0, 440.00, 493.88,
+        523.25, 659.25, 783.99, 659.25, 587.33, 523.25, 0, 392.00,
+        440.00, 523.25, 587.33, 659.25, 0, 587.33, 523.25, 440.00,
+        392.00, 493.88, 587.33, 523.25, 440.00, 392.00, 0, 0]
+    const bassNotes = [130.81, 174.61, 146.83, 196.00]
     let arpeggioStep = 0
     window.setInterval(() => {
         if (!audioContext || audioContext.state !== 'running' || musicMuted) return
-        const frequency = arpeggio[arpeggioStep % arpeggio.length]
+        const step = arpeggioStep
+        const frequency = arpeggio[step % arpeggio.length]
         arpeggioStep++
-        if (!frequency) return
         const now = audioContext.currentTime
+
+        if (step % 4 === 0) {
+            const bass = audioContext.createOscillator()
+            const bassGain = audioContext.createGain()
+            bass.type = 'triangle'
+            bass.frequency.value = bassNotes[Math.floor(step / 8) % bassNotes.length]
+            bassGain.gain.setValueAtTime(0.0001, now)
+            bassGain.gain.exponentialRampToValueAtTime(0.035, now + 0.018)
+            bassGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.34)
+            bass.connect(bassGain).connect(ambientGain)
+            bass.start(now)
+            bass.stop(now + 0.4)
+        }
+        if (!frequency) return
+
         const oscillator = audioContext.createOscillator()
         const sparkle = audioContext.createOscillator()
         const gain = audioContext.createGain()
         const sparkleGain = audioContext.createGain()
-        oscillator.type = 'sine'
+        oscillator.type = 'triangle'
         sparkle.type = 'sine'
         oscillator.frequency.value = frequency
-        sparkle.frequency.value = frequency * 3
+        sparkle.frequency.value = frequency * 2
         gain.gain.setValueAtTime(0.0001, now)
-        gain.gain.exponentialRampToValueAtTime(0.052, now + 0.012)
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.62)
+        gain.gain.exponentialRampToValueAtTime(0.048, now + 0.014)
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.30)
         sparkleGain.gain.setValueAtTime(0.0001, now)
-        sparkleGain.gain.exponentialRampToValueAtTime(0.009, now + 0.008)
-        sparkleGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28)
+        sparkleGain.gain.exponentialRampToValueAtTime(0.007, now + 0.008)
+        sparkleGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.20)
         oscillator.connect(gain).connect(ambientGain)
         sparkle.connect(sparkleGain).connect(ambientGain)
         oscillator.start(now)
         sparkle.start(now)
-        oscillator.stop(now + 0.7)
-        sparkle.stop(now + 0.35)
-    }, 326)
+        oscillator.stop(now + 0.35)
+        sparkle.stop(now + 0.24)
+    }, 288)
 }
 
 soundButton.addEventListener('click', (event) => {
