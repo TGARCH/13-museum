@@ -275,39 +275,6 @@ const startAmbientMusic = () => {
     ambientGain.gain.exponentialRampToValueAtTime(0.055, audioContext.currentTime + 2.5)
     ambientGain.connect(audioContext.destination)
 
-    const filter = audioContext.createBiquadFilter()
-    filter.type = 'lowpass'
-    filter.frequency.value = 2400
-    filter.Q.value = 0.25
-    filter.connect(ambientGain)
-
-    const chordSets = [
-        [261.63, 329.63, 392.00], // C major
-        [349.23, 440.00, 523.25], // F major
-        [220.00, 261.63, 329.63], // A minor
-        [196.00, 246.94, 293.66]  // G major
-    ]
-    const pads = chordSets[0].map((frequency, index) => {
-        const oscillator = audioContext.createOscillator()
-        const gain = audioContext.createGain()
-        oscillator.type = 'sine'
-        oscillator.frequency.value = frequency
-        gain.gain.value = index === 0 ? 0.028 : 0.016
-        oscillator.connect(gain).connect(filter)
-        oscillator.start()
-        return oscillator
-    })
-
-    let chordIndex = 0
-    window.setInterval(() => {
-        if (!audioContext) return
-        chordIndex = (chordIndex + 1) % chordSets.length
-        const now = audioContext.currentTime
-        pads.forEach((oscillator, index) => {
-            oscillator.frequency.exponentialRampToValueAtTime(chordSets[chordIndex][index], now + 0.8)
-        })
-    }, 5217)
-
     // Original, jaunty 2/4 workshop-cartoon motif at 104 BPM. The melody uses
     // playful pauses and small rhythmic stumbles without quoting any theme.
     const arpeggio = [392.00, 0, 523.25, 0, 587.33, 0, 523.25, 0,
@@ -344,10 +311,10 @@ const startAmbientMusic = () => {
         oscillator.frequency.value = frequency
         sparkle.frequency.value = frequency * 2
         gain.gain.setValueAtTime(0.0001, now)
-        gain.gain.exponentialRampToValueAtTime(0.014, now + 0.014)
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.42)
+        gain.gain.exponentialRampToValueAtTime(0.026, now + 0.014)
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.34)
         sparkleGain.gain.setValueAtTime(0.0001, now)
-        sparkleGain.gain.exponentialRampToValueAtTime(0.0025, now + 0.008)
+        sparkleGain.gain.exponentialRampToValueAtTime(0.004, now + 0.008)
         sparkleGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18)
         oscillator.connect(gain).connect(ambientGain)
         sparkle.connect(sparkleGain).connect(ambientGain)
