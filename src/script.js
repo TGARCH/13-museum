@@ -310,10 +310,8 @@ const startAmbientMusic = () => {
 
     // Original, jaunty 2/4 workshop-cartoon motif at 104 BPM. The melody uses
     // playful pauses and small rhythmic stumbles without quoting any theme.
-    const arpeggio = [392.00, 523.25, 659.25, 587.33, 523.25, 0, 440.00, 493.88,
-        523.25, 659.25, 783.99, 659.25, 587.33, 523.25, 0, 392.00,
-        440.00, 523.25, 587.33, 659.25, 0, 587.33, 523.25, 440.00,
-        392.00, 493.88, 587.33, 523.25, 440.00, 392.00, 0, 0]
+    const arpeggio = [392.00, 0, 523.25, 0, 587.33, 0, 523.25, 0,
+        440.00, 0, 0, 493.88, 0, 392.00, 0, 0]
     const bassNotes = [130.81, 174.61, 146.83, 196.00]
     let arpeggioStep = 0
     window.setInterval(() => {
@@ -341,23 +339,23 @@ const startAmbientMusic = () => {
         const sparkle = audioContext.createOscillator()
         const gain = audioContext.createGain()
         const sparkleGain = audioContext.createGain()
-        oscillator.type = 'triangle'
+        oscillator.type = 'sine'
         sparkle.type = 'sine'
         oscillator.frequency.value = frequency
         sparkle.frequency.value = frequency * 2
         gain.gain.setValueAtTime(0.0001, now)
-        gain.gain.exponentialRampToValueAtTime(0.048, now + 0.014)
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.30)
+        gain.gain.exponentialRampToValueAtTime(0.014, now + 0.014)
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.42)
         sparkleGain.gain.setValueAtTime(0.0001, now)
-        sparkleGain.gain.exponentialRampToValueAtTime(0.007, now + 0.008)
-        sparkleGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.20)
+        sparkleGain.gain.exponentialRampToValueAtTime(0.0025, now + 0.008)
+        sparkleGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18)
         oscillator.connect(gain).connect(ambientGain)
         sparkle.connect(sparkleGain).connect(ambientGain)
         oscillator.start(now)
         sparkle.start(now)
-        oscillator.stop(now + 0.35)
+        oscillator.stop(now + 0.48)
         sparkle.stop(now + 0.24)
-    }, 288)
+    }, 576)
 }
 
 soundButton.addEventListener('click', (event) => {
