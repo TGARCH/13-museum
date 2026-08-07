@@ -277,15 +277,15 @@ const startAmbientMusic = () => {
 
     const filter = audioContext.createBiquadFilter()
     filter.type = 'lowpass'
-    filter.frequency.value = 1600
+    filter.frequency.value = 2400
     filter.Q.value = 0.25
     filter.connect(ambientGain)
 
     const chordSets = [
-        [261.63, 329.63, 392.00],
-        [293.66, 369.99, 440.00],
-        [220.00, 277.18, 329.63],
-        [246.94, 311.13, 369.99]
+        [261.63, 329.63, 392.00], // C major
+        [349.23, 440.00, 523.25], // F major
+        [220.00, 261.63, 329.63], // A minor
+        [196.00, 246.94, 293.66]  // G major
     ]
     const pads = chordSets[0].map((frequency, index) => {
         const oscillator = audioContext.createOscillator()
@@ -304,29 +304,42 @@ const startAmbientMusic = () => {
         chordIndex = (chordIndex + 1) % chordSets.length
         const now = audioContext.currentTime
         pads.forEach((oscillator, index) => {
-            oscillator.frequency.exponentialRampToValueAtTime(chordSets[chordIndex][index], now + 1.2)
+            oscillator.frequency.exponentialRampToValueAtTime(chordSets[chordIndex][index], now + 0.8)
         })
-    }, 6600)
+    }, 5217)
 
-    // A quiet 72 BPM arpeggio gives the background a normal musical pulse
-    // without turning the gallery into a rhythmic soundtrack.
-    const arpeggio = [523.25, 659.25, 783.99, 659.25, 587.33, 739.99, 880.00, 739.99]
+    // A bright C-major pentatonic motif at 92 BPM. Short sine tones and a
+    // quiet overtone resemble a soft marimba with an occasional bell sparkle.
+    const arpeggio = [523.25, 659.25, 783.99, 880.00, 783.99, 659.25, 587.33, 659.25,
+        523.25, 659.25, 783.99, 1046.50, 0, 783.99, 659.25, 587.33]
     let arpeggioStep = 0
     window.setInterval(() => {
         if (!audioContext || audioContext.state !== 'running' || musicMuted) return
+        const frequency = arpeggio[arpeggioStep % arpeggio.length]
+        arpeggioStep++
+        if (!frequency) return
         const now = audioContext.currentTime
         const oscillator = audioContext.createOscillator()
+        const sparkle = audioContext.createOscillator()
         const gain = audioContext.createGain()
-        oscillator.type = 'triangle'
-        oscillator.frequency.value = arpeggio[arpeggioStep % arpeggio.length]
-        arpeggioStep++
+        const sparkleGain = audioContext.createGain()
+        oscillator.type = 'sine'
+        sparkle.type = 'sine'
+        oscillator.frequency.value = frequency
+        sparkle.frequency.value = frequency * 3
         gain.gain.setValueAtTime(0.0001, now)
-        gain.gain.exponentialRampToValueAtTime(0.045, now + 0.035)
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.15)
+        gain.gain.exponentialRampToValueAtTime(0.052, now + 0.012)
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.62)
+        sparkleGain.gain.setValueAtTime(0.0001, now)
+        sparkleGain.gain.exponentialRampToValueAtTime(0.009, now + 0.008)
+        sparkleGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28)
         oscillator.connect(gain).connect(ambientGain)
+        sparkle.connect(sparkleGain).connect(ambientGain)
         oscillator.start(now)
-        oscillator.stop(now + 1.2)
-    }, 833)
+        sparkle.start(now)
+        oscillator.stop(now + 0.7)
+        sparkle.stop(now + 0.35)
+    }, 326)
 }
 
 soundButton.addEventListener('click', (event) => {
