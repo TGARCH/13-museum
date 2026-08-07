@@ -272,14 +272,16 @@ const startAmbientMusic = () => {
     audioContext = new (window.AudioContext || window.webkitAudioContext)()
     ambientGain = audioContext.createGain()
     ambientGain.gain.setValueAtTime(0.0001, audioContext.currentTime)
-    ambientGain.gain.exponentialRampToValueAtTime(0.055, audioContext.currentTime + 2.5)
+    ambientGain.gain.exponentialRampToValueAtTime(0.075, audioContext.currentTime + 1.2)
     ambientGain.connect(audioContext.destination)
 
     // Original, jaunty 2/4 workshop-cartoon motif at 104 BPM. The melody uses
     // playful pauses and small rhythmic stumbles without quoting any theme.
-    const arpeggio = [392.00, 0, 523.25, 0, 587.33, 0, 523.25, 0,
-        440.00, 0, 0, 493.88, 0, 392.00, 0, 0]
-    const bassNotes = [130.81, 174.61, 146.83, 196.00]
+    const arpeggio = [523.25, 659.25, 783.99, 659.25, 587.33, 698.46, 880.00, 0,
+        783.99, 659.25, 587.33, 523.25, 659.25, 783.99, 1046.50, 0,
+        880.00, 783.99, 698.46, 587.33, 0, 659.25, 783.99, 659.25,
+        523.25, 587.33, 659.25, 783.99, 659.25, 587.33, 523.25, 0]
+    const bassNotes = [130.81, 174.61, 196.00, 146.83]
     let arpeggioStep = 0
     window.setInterval(() => {
         if (!audioContext || audioContext.state !== 'running' || musicMuted) return
@@ -288,17 +290,17 @@ const startAmbientMusic = () => {
         arpeggioStep++
         const now = audioContext.currentTime
 
-        if (step % 4 === 0) {
+        if (step % 8 === 0) {
             const bass = audioContext.createOscillator()
             const bassGain = audioContext.createGain()
             bass.type = 'triangle'
             bass.frequency.value = bassNotes[Math.floor(step / 8) % bassNotes.length]
             bassGain.gain.setValueAtTime(0.0001, now)
-            bassGain.gain.exponentialRampToValueAtTime(0.035, now + 0.018)
-            bassGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.34)
+            bassGain.gain.exponentialRampToValueAtTime(0.046, now + 0.012)
+            bassGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22)
             bass.connect(bassGain).connect(ambientGain)
             bass.start(now)
-            bass.stop(now + 0.4)
+            bass.stop(now + 0.28)
         }
         if (!frequency) return
 
@@ -311,25 +313,25 @@ const startAmbientMusic = () => {
         oscillator.frequency.value = frequency
         sparkle.frequency.value = frequency * 2
         gain.gain.setValueAtTime(0.0001, now)
-        gain.gain.exponentialRampToValueAtTime(0.026, now + 0.014)
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.34)
+        gain.gain.exponentialRampToValueAtTime(0.044, now + 0.008)
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18)
         sparkleGain.gain.setValueAtTime(0.0001, now)
-        sparkleGain.gain.exponentialRampToValueAtTime(0.004, now + 0.008)
-        sparkleGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18)
+        sparkleGain.gain.exponentialRampToValueAtTime(0.008, now + 0.006)
+        sparkleGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.11)
         oscillator.connect(gain).connect(ambientGain)
         sparkle.connect(sparkleGain).connect(ambientGain)
         oscillator.start(now)
         sparkle.start(now)
-        oscillator.stop(now + 0.48)
-        sparkle.stop(now + 0.24)
-    }, 576)
+        oscillator.stop(now + 0.22)
+        sparkle.stop(now + 0.14)
+    }, 214)
 }
 
 soundButton.addEventListener('click', (event) => {
     event.stopPropagation()
     startAmbientMusic()
     musicMuted = !musicMuted
-    ambientGain.gain.exponentialRampToValueAtTime(musicMuted ? 0.0001 : 0.055, audioContext.currentTime + 0.35)
+    ambientGain.gain.exponentialRampToValueAtTime(musicMuted ? 0.0001 : 0.075, audioContext.currentTime + 0.25)
     soundButton.textContent = musicMuted ? 'Włącz muzykę' : 'Wycisz muzykę'
 })
 
