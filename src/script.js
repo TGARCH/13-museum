@@ -290,9 +290,9 @@ const startAmbientMusic = () => {
     const pads = chordSets[0].map((frequency, index) => {
         const oscillator = audioContext.createOscillator()
         const gain = audioContext.createGain()
-        oscillator.type = index === 1 ? 'triangle' : 'sine'
+        oscillator.type = 'sine'
         oscillator.frequency.value = frequency
-        gain.gain.value = index === 0 ? 0.10 : 0.06
+        gain.gain.value = index === 0 ? 0.028 : 0.016
         oscillator.connect(gain).connect(filter)
         oscillator.start()
         return oscillator
