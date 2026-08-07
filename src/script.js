@@ -376,7 +376,8 @@ window.addEventListener('resize', () =>
 const camera = new THREE.PerspectiveCamera(65, sizes.width / sizes.height, 0.1, 60)
 const eyeHeight = 1.45
 const visitorRadius = 0.16
-const walkSpeed = 5
+const walkSpeed = 2.6
+const fastWalkSpeed = 5.2
 camera.position.set(-3, eyeHeight, 3)
 scene.add(camera)
 
@@ -524,7 +525,9 @@ const updateWalkControls = (deltaTime) => {
     forward.set(-Math.sin(yaw), 0, -Math.cos(yaw))
     right.set(Math.cos(yaw), 0, -Math.sin(yaw))
     movement.copy(forward).multiplyScalar(forwardInput).addScaledVector(right, sideInput).normalize()
-    movement.multiplyScalar(walkSpeed * Math.min(deltaTime, 0.05))
+    const movingFast = pressedKeys.has('ShiftLeft') || pressedKeys.has('ShiftRight')
+    const currentWalkSpeed = movingFast ? fastWalkSpeed : walkSpeed
+    movement.multiplyScalar(currentWalkSpeed * Math.min(deltaTime, 0.05))
 
     // Resolve axes separately: a blocked visitor stops in front of the wall,
     // while a diagonal movement can continue naturally along it.
