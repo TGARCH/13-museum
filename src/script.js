@@ -40,7 +40,7 @@ const screenGlowMaterial = new THREE.MeshBasicMaterial({
 
 function createYouTubeScreen(videoId, position, rotationY) {
     const frame = new THREE.Mesh(
-        new THREE.BoxGeometry(3.645, 6.345, 0.085),
+        new THREE.BoxGeometry(2.916, 5.076, 0.075),
         screenFrameMaterial
     )
     frame.position.copy(position)
@@ -48,7 +48,7 @@ function createYouTubeScreen(videoId, position, rotationY) {
     frame.castShadow = true
     scene.add(frame)
 
-    const glow = new THREE.Mesh(new THREE.PlaneGeometry(4.32, 7.02), screenGlowMaterial.clone())
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(3.456, 5.616), screenGlowMaterial.clone())
     glow.position.copy(position)
     glow.rotation.y = rotationY
 
@@ -68,7 +68,7 @@ function createYouTubeScreen(videoId, position, rotationY) {
     const screen = new CSS3DObject(element)
     screen.position.copy(position)
     screen.rotation.y = rotationY
-    screen.scale.setScalar(0.007875)
+    screen.scale.setScalar(0.0063)
 
     // Przesunięcie powierzchni odtwarzacza przed czarną ramę.
     const normal = new THREE.Vector3(0, 0, 1).applyAxisAngle(
@@ -96,22 +96,22 @@ function createYouTubeScreen(videoId, position, rotationY) {
 // Cztery lewitujące ekrany: po jednym w każdym narożniku muzeum.
 createYouTubeScreen(
     'sTjfavBiKaw',
-    new THREE.Vector3(-11.35, 3.15, -11.35),
+    new THREE.Vector3(-12.55, 2.66, -12.55),
     Math.PI * 0.25
 )
 createYouTubeScreen(
     'w8Gev2XEjEw',
-    new THREE.Vector3(11.35, 3.15, -11.35),
+    new THREE.Vector3(12.55, 2.66, -12.55),
     -Math.PI * 0.25
 )
 createYouTubeScreen(
     'U51P0KtXeDA',
-    new THREE.Vector3(-11.35, 3.15, 11.35),
+    new THREE.Vector3(-12.55, 2.66, 12.55),
     Math.PI * 0.75
 )
 createYouTubeScreen(
     '8cuxCmHW_4A',
-    new THREE.Vector3(11.35, 3.15, 11.35),
+    new THREE.Vector3(12.55, 2.66, 12.55),
     -Math.PI * 0.75
 )
 
