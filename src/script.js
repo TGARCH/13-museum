@@ -40,7 +40,7 @@ const screenGlowMaterial = new THREE.MeshBasicMaterial({
 
 function createYouTubeScreen(videoId, position, rotationY) {
     const frame = new THREE.Mesh(
-        new THREE.BoxGeometry(2.43, 4.23, 0.07),
+        new THREE.BoxGeometry(3.645, 6.345, 0.085),
         screenFrameMaterial
     )
     frame.position.copy(position)
@@ -48,7 +48,7 @@ function createYouTubeScreen(videoId, position, rotationY) {
     frame.castShadow = true
     scene.add(frame)
 
-    const glow = new THREE.Mesh(new THREE.PlaneGeometry(2.88, 4.68), screenGlowMaterial.clone())
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(4.32, 7.02), screenGlowMaterial.clone())
     glow.position.copy(position)
     glow.rotation.y = rotationY
 
@@ -57,18 +57,18 @@ function createYouTubeScreen(videoId, position, rotationY) {
     element.innerHTML = `
         <iframe
             title="Film Rysunek z Fabryczką"
-            data-src="https://www.youtube-nocookie.com/embed/${videoId}?rel=0&playsinline=1&modestbranding=1"
+            data-src="https://www.youtube-nocookie.com/embed/${videoId}?rel=0&playsinline=1&modestbranding=1&autoplay=1&mute=1&enablejsapi=1"
             loading="lazy"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowfullscreen
         ></iframe>
-        <div class="youtube-screen__hint">Esc — zwolnij kursor i uruchom film</div>
+        <div class="youtube-screen__hint">Film uruchamia się automatycznie • dźwięk w odtwarzaczu</div>
     `
 
     const screen = new CSS3DObject(element)
     screen.position.copy(position)
     screen.rotation.y = rotationY
-    screen.scale.setScalar(0.00525)
+    screen.scale.setScalar(0.007875)
 
     // Przesunięcie powierzchni odtwarzacza przed czarną ramę.
     const normal = new THREE.Vector3(0, 0, 1).applyAxisAngle(
@@ -88,30 +88,31 @@ function createYouTubeScreen(videoId, position, rotationY) {
         normal,
         baseY: position.y,
         phase: videoScreens.length * 1.37,
-        loaded: false
+        loaded: false,
+        playingNearby: false
     })
 }
 
 // Cztery lewitujące ekrany: po jednym w każdym narożniku muzeum.
 createYouTubeScreen(
     'sTjfavBiKaw',
-    new THREE.Vector3(-12.15, 2.35, -13.35),
-    0
+    new THREE.Vector3(-11.35, 3.15, -11.35),
+    Math.PI * 0.25
 )
 createYouTubeScreen(
     'w8Gev2XEjEw',
-    new THREE.Vector3(12.15, 2.35, -13.35),
-    0
+    new THREE.Vector3(11.35, 3.15, -11.35),
+    -Math.PI * 0.25
 )
 createYouTubeScreen(
     'U51P0KtXeDA',
-    new THREE.Vector3(-12.15, 2.35, 13.35),
-    Math.PI
+    new THREE.Vector3(-11.35, 3.15, 11.35),
+    Math.PI * 0.75
 )
 createYouTubeScreen(
     '8cuxCmHW_4A',
-    new THREE.Vector3(12.15, 2.35, 13.35),
-    Math.PI
+    new THREE.Vector3(11.35, 3.15, 11.35),
+    -Math.PI * 0.75
 )
 
 
@@ -742,13 +743,22 @@ const updateVideoScreens = (elapsedTime) => {
             .subVectors(camera.position, screen.object.position)
         const distance = toCamera.length()
         const facingCamera = screen.normal.dot(toCamera.normalize()) > 0.08
-        const visible = distance < 10 && facingCamera
+        const visible = distance < 9 && facingCamera
         screen.object.visible = visible
 
         // YouTube ładuje się dopiero, gdy zwiedzający zbliży się do ekranu.
         if (visible && !screen.loaded) {
             screen.iframe.src = screen.iframe.dataset.src
             screen.loaded = true
+        }
+
+        if (screen.loaded && visible !== screen.playingNearby) {
+            screen.iframe.contentWindow?.postMessage(JSON.stringify({
+                event: 'command',
+                func: visible ? 'playVideo' : 'pauseVideo',
+                args: []
+            }), '*')
+            screen.playingNearby = visible
         }
     }
 }
