@@ -332,6 +332,82 @@ let specterTagVisibleUntil = 0
  */
 const textureLoader = new THREE.TextureLoader()
 const cubeTextureLoader = new THREE.CubeTextureLoader()
+
+// Mały twórczy bałagan pozostawiony na podłodze po zajęciach z rysunku.
+const drawingMess = new THREE.Group()
+drawingMess.position.set(-10.35, 0.035, -0.4)
+scene.add(drawingMess)
+
+const paperGeometry = new THREE.PlaneGeometry(0.55, 0.78, 5, 7)
+const paperPositions = paperGeometry.attributes.position
+for (let index = 0; index < paperPositions.count; index++) {
+    const x = paperPositions.getX(index) / 0.275
+    const y = paperPositions.getY(index) / 0.39
+    paperPositions.setZ(index, (Math.pow(Math.abs(x), 5) + Math.pow(Math.abs(y), 6)) * 0.006)
+}
+paperGeometry.computeVertexNormals()
+
+const paperLayouts = [
+    [-1.35, -0.85, -0.35], [-0.82, -0.96, 0.18], [-0.2, -0.86, -0.12], [0.42, -0.88, 0.31], [1.08, -0.76, -0.25],
+    [-1.48, -0.2, 0.2], [-0.9, -0.25, -0.42], [-0.25, -0.18, 0.37], [0.48, -0.23, -0.18], [1.26, -0.12, 0.28],
+    [-1.22, 0.42, -0.22], [-0.58, 0.38, 0.26], [0.04, 0.46, -0.34], [0.72, 0.38, 0.17], [1.38, 0.51, -0.27],
+    [-1.1, 1.02, 0.33], [-0.48, 1.0, -0.13], [0.18, 1.06, 0.28], [0.86, 1.02, -0.3],
+    [-0.72, 1.54, 0.17], [0.02, 1.6, -0.24], [0.76, 1.54, 0.31]
+]
+
+const coverImages = [
+    '0_koty.jpg', '0_psy-600x860.jpg', '0_portrety-600x861.jpg',
+    '0_jedzenie-i-rosliny-600x861.jpg', '0_ptaki-i-inne-zwierzeta.jpg',
+    '0_auta-i-samoloty-600x860.jpg'
+]
+const patternImages = [
+    '01-psy-4-600x848.jpg', '05-czlowiek-13-600x849.jpg', '06-pojazdy-11-600x424.jpg',
+    '01-psy-4-600x848.jpg', '05-czlowiek-13-600x849.jpg', '06-pojazdy-11-600x424.jpg'
+]
+const printedImages = [...coverImages, ...patternImages]
+
+paperLayouts.forEach(([x, z, rotation], index) => {
+    let material
+    if (index < 10) {
+        material = new THREE.MeshStandardMaterial({ color: 0xfffdf7, roughness: 0.92, side: THREE.DoubleSide })
+    } else {
+        const imageName = printedImages[index - 10]
+        const map = textureLoader.load(`/textures/drawing-mess-web/${imageName}`)
+        map.colorSpace = THREE.SRGBColorSpace
+        material = new THREE.MeshStandardMaterial({ map, color: 0xffffff, roughness: 0.88, side: THREE.DoubleSide })
+    }
+    const paper = new THREE.Mesh(paperGeometry, material)
+    paper.position.set(x, 0.008 + index * 0.0012, z)
+    paper.rotation.set(-Math.PI * 0.5, 0, rotation)
+    paper.castShadow = true
+    paper.receiveShadow = true
+    drawingMess.add(paper)
+})
+
+const crayonColors = [0xef3e42, 0xff8a32, 0xffd83d, 0x54b948, 0x24b7b0, 0x3185e5, 0x7756c5, 0xd64da1, 0x7a4b2c, 0x20262c]
+const crayonLayouts = [
+    [-1.55, -1.22, 0.2], [-0.96, -1.35, -0.42], [-0.35, -1.25, 0.68], [0.32, -1.3, -0.18], [1.02, -1.2, 0.42],
+    [-1.62, 0.73, -0.36], [-1.38, 1.33, 0.58], [1.52, -0.44, -0.62], [1.48, 0.48, 0.24], [1.35, 1.24, -0.4]
+]
+crayonLayouts.forEach(([x, z, rotation], index) => {
+    const crayon = new THREE.Group()
+    const color = crayonColors[index]
+    const bodyMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.62 })
+    const woodMaterial = new THREE.MeshStandardMaterial({ color: 0xe8c38f, roughness: 0.82 })
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.42, 8), bodyMaterial)
+    body.rotation.z = Math.PI * 0.5
+    const wood = new THREE.Mesh(new THREE.ConeGeometry(0.026, 0.11, 8), woodMaterial)
+    wood.position.x = 0.265
+    wood.rotation.z = -Math.PI * 0.5
+    const lead = new THREE.Mesh(new THREE.ConeGeometry(0.011, 0.045, 8), bodyMaterial)
+    lead.position.x = 0.34
+    lead.rotation.z = -Math.PI * 0.5
+    crayon.add(body, wood, lead)
+    crayon.position.set(x, 0.035, z)
+    crayon.rotation.y = rotation
+    crayon.traverse((part) => { if (part.isMesh) part.castShadow = true })
+    drawingMess.add(crayon)
+})
 /*
 const environmentMapTexture = cubeTextureLoader.load([
     '/textures/environmentMaps/0/px.png',
