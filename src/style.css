@@ -25,7 +25,8 @@ body {
     pointer-events: none;
 }
 
-.css3d-layer.interactive { pointer-events: auto; }
+.css3d-layer.interactive { pointer-events: none; }
+.css3d-layer.interactive .youtube-screen { pointer-events: auto; }
 .css3d-layer:not(.interactive) .youtube-screen { pointer-events: none; }
 
 .youtube-screen {
@@ -230,3 +231,109 @@ body {
 
 .fabryczka-tag__details strong { color: #72f7ff; font-size: 13px; }
 .fabryczka-tag__details b { color: #fff; }
+
+.mobile-controls { display: none; }
+
+@media (pointer: coarse) {
+    html, body, .webgl { touch-action: none; }
+
+    .instructions { display: none; }
+    .start-card::after {
+        content: 'Joystick — ruch  •  Przesuwanie palcem — rozglądanie';
+        display: block;
+        margin-top: 18px;
+        color: rgba(255, 255, 255, 0.68);
+        font-size: 12px;
+        line-height: 1.5;
+    }
+
+    .start-panel.paused .start-card::after { display: none; }
+    .walk-hint { display: none; }
+    .sound-button { right: 12px; bottom: 12px; z-index: 16; }
+    .fabryczka-tag { width: min(340px, calc(100vw - 24px)); }
+
+    .mobile-controls.active { display: block; }
+    .mobile-controls button {
+        position: fixed;
+        z-index: 16;
+        color: #fff;
+        font: 650 13px/1 Inter, Arial, sans-serif;
+        background: rgba(9, 17, 22, 0.72);
+        border: 1px solid rgba(114, 247, 255, 0.55);
+        box-shadow: 0 0 18px rgba(80, 225, 255, 0.18);
+        backdrop-filter: blur(8px);
+        touch-action: none;
+    }
+
+    .mobile-pause-button {
+        top: max(12px, env(safe-area-inset-top));
+        left: max(12px, env(safe-area-inset-left));
+        padding: 11px 15px;
+        border-radius: 999px;
+    }
+
+    .mobile-look-hint {
+        position: fixed;
+        top: max(18px, env(safe-area-inset-top));
+        left: 50%;
+        z-index: 6;
+        padding: 7px 11px;
+        color: rgba(255, 255, 255, 0.64);
+        font-size: 11px;
+        background: rgba(8, 13, 16, 0.48);
+        border-radius: 999px;
+        transform: translateX(-50%);
+        pointer-events: none;
+    }
+
+    .mobile-joystick {
+        position: fixed;
+        left: max(18px, env(safe-area-inset-left));
+        bottom: max(22px, env(safe-area-inset-bottom));
+        z-index: 16;
+        width: 126px;
+        height: 126px;
+        border: 1px solid rgba(255, 255, 255, 0.28);
+        border-radius: 50%;
+        background: rgba(8, 14, 18, 0.38);
+        box-shadow: inset 0 0 28px rgba(80, 225, 255, 0.1);
+        touch-action: none;
+    }
+
+    .mobile-joystick__knob {
+        position: absolute;
+        top: 33px;
+        left: 33px;
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background: rgba(114, 247, 255, 0.62);
+        border: 2px solid rgba(255, 255, 255, 0.72);
+        box-shadow: 0 0 24px rgba(80, 225, 255, 0.44);
+        pointer-events: none;
+        transition: transform 45ms linear;
+    }
+
+    .mobile-run-button {
+        right: max(18px, env(safe-area-inset-right));
+        bottom: max(30px, env(safe-area-inset-bottom));
+        width: 82px;
+        height: 82px;
+        border-radius: 50%;
+    }
+    .mobile-run-button.pressed { background: rgba(77, 219, 235, 0.64); }
+
+    .mobile-interact-button {
+        right: max(26px, env(safe-area-inset-right));
+        bottom: calc(max(30px, env(safe-area-inset-bottom)) + 96px);
+        padding: 14px 20px;
+        border-radius: 999px;
+        background: rgba(78, 45, 119, 0.8) !important;
+    }
+    .mobile-interact-button[hidden] { display: none; }
+}
+
+@media (pointer: coarse) and (orientation: portrait) {
+    .mobile-look-hint { top: 62px; }
+    .youtube-screen__hint { font-size: 10px; }
+}
