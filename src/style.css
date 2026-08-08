@@ -323,6 +323,14 @@ body {
     }
     .mobile-run-button.pressed { background: rgba(77, 219, 235, 0.64); }
 
+    .mobile-jump-button {
+        right: calc(max(18px, env(safe-area-inset-right)) + 92px);
+        bottom: max(38px, env(safe-area-inset-bottom));
+        width: 70px;
+        height: 70px;
+        border-radius: 50%;
+    }
+
     .mobile-interact-button {
         right: max(26px, env(safe-area-inset-right));
         bottom: calc(max(30px, env(safe-area-inset-bottom)) + 96px);
