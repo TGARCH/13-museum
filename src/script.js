@@ -654,10 +654,33 @@ let audioContext = null
 let ambientGain = null
 let musicStarted = false
 let musicMuted = false
+let childrenAmbienceGain = null
+let childrenAmbienceSource = null
+
+// Mixkit SFX 2264 — "Busy park playground with kids playing", Mixkit License.
+const startChildrenAmbience = async () => {
+    if (!audioContext || childrenAmbienceSource) return
+    try {
+        const response = await fetch('/audio/kids-playing-ambience-mobile.mp3')
+        const encodedAudio = await response.arrayBuffer()
+        const buffer = await audioContext.decodeAudioData(encodedAudio)
+        childrenAmbienceGain = audioContext.createGain()
+        childrenAmbienceGain.gain.setValueAtTime(0.0001, audioContext.currentTime)
+        childrenAmbienceGain.connect(audioContext.destination)
+        childrenAmbienceSource = audioContext.createBufferSource()
+        childrenAmbienceSource.buffer = buffer
+        childrenAmbienceSource.loop = true
+        childrenAmbienceSource.connect(childrenAmbienceGain)
+        childrenAmbienceSource.start()
+    } catch (error) {
+        console.warn('Nie udało się uruchomić odgłosów dzieci.', error)
+    }
+}
 
 const startAmbientMusic = () => {
     if (musicStarted) {
         audioContext?.resume()
+        startChildrenAmbience()
         return
     }
     musicStarted = true
@@ -666,6 +689,7 @@ const startAmbientMusic = () => {
     ambientGain.gain.setValueAtTime(0.0001, audioContext.currentTime)
     ambientGain.gain.exponentialRampToValueAtTime(0.075, audioContext.currentTime + 1.2)
     ambientGain.connect(audioContext.destination)
+    startChildrenAmbience()
 
     // Original, jaunty 2/4 workshop-cartoon motif at 104 BPM. The melody uses
     // playful pauses and small rhythmic stumbles without quoting any theme.
@@ -915,6 +939,20 @@ const updateDust = (deltaTime, elapsedTime) => {
     dustGeometry.attributes.position.needsUpdate = true
 }
 
+const updateChildrenAmbience = () => {
+    if (!audioContext || !childrenAmbienceGain) return
+    const dx = camera.position.x - drawingMess.position.x
+    const dz = camera.position.z - drawingMess.position.z
+    const distance = Math.hypot(dx, dz)
+    const proximity = 1 - THREE.MathUtils.clamp((distance - 1.2) / 9, 0, 1)
+    const targetVolume = proximity * proximity * 0.14
+    childrenAmbienceGain.gain.setTargetAtTime(
+        Math.max(0.0001, targetVolume),
+        audioContext.currentTime,
+        0.32
+    )
+}
+
 const updateSpecter = (elapsedTime) => {
     const positions = specterPositionAttribute.array
     for (let vertexIndex = 0; vertexIndex < specterPositionAttribute.count; vertexIndex++) {
@@ -1053,6 +1091,7 @@ const tick = () =>
     //}
 
     updateWalkControls(deltaTime)
+    updateChildrenAmbience()
     updateDust(deltaTime, elapsedTime)
     updateSpecter(elapsedTime)
     updateMagicCrayons(elapsedTime)
