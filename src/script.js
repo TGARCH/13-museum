@@ -504,6 +504,69 @@ const collisionWalls = [
     { x: 7, z: -10, halfX: 0.25, halfZ: 3.5 }
 ]
 
+// Pole 1 × 1 m po przeciwnej stronie muzeum uruchamia deszcz klocków.
+const blockTriggerPosition = new THREE.Vector3(10.35, 0.025, -0.4)
+const blockTriggerMaterial = new THREE.MeshStandardMaterial({
+    color: 0x4c2b78,
+    emissive: 0x8b54ff,
+    emissiveIntensity: 1.6,
+    transparent: true,
+    opacity: 0.74,
+    roughness: 0.28,
+    metalness: 0.25
+})
+const blockTrigger = new THREE.Mesh(new THREE.BoxGeometry(1, 0.035, 1), blockTriggerMaterial)
+blockTrigger.position.copy(blockTriggerPosition)
+scene.add(blockTrigger)
+const blockTriggerEdges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(blockTrigger.geometry),
+    new THREE.LineBasicMaterial({ color: 0xd8c6ff, transparent: true, opacity: 0.92 })
+)
+blockTrigger.add(blockTriggerEdges)
+
+const fallingBlocks = []
+let blockRainStarted = false
+const blockColors = [0xff4d61, 0xffa62b, 0xffdf4d, 0x5bd46d, 0x46c7e8, 0x4f78ff, 0x9d5cff, 0xf05bc3]
+const blockSpawnPoints = [
+    [-11.5, -11], [-8.8, -7.5], [-11.2, -2.5], [-10.2, 3.8], [-11.4, 9.2],
+    [-4.8, -12], [0, -12.2], [4.8, -12], [-4.2, -7.3], [0, -7.4], [4.3, -7.2],
+    [-4.5, -2.5], [0, -3.4], [4.4, -2.4], [-4.3, 3.1], [0, 3.4], [4.4, 3.0],
+    [9.5, -9], [11.1, -4.4], [10.4, 4.2], [11.2, 9.3]
+]
+
+const startBlockRain = () => {
+    if (blockRainStarted) return
+    blockRainStarted = true
+    blockTriggerMaterial.color.setHex(0x274c42)
+    blockTriggerMaterial.emissive.setHex(0x45ffc3)
+
+    blockSpawnPoints.forEach(([x, z], index) => {
+        const material = new THREE.MeshStandardMaterial({
+            color: blockColors[index % blockColors.length],
+            roughness: 0.44,
+            metalness: 0.12,
+            emissive: blockColors[index % blockColors.length],
+            emissiveIntensity: 0.08
+        })
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material)
+        mesh.position.set(x, 6.5 + (index % 6) * 1.15, z)
+        mesh.rotation.y = (index * 0.71) % Math.PI
+        mesh.castShadow = true
+        mesh.receiveShadow = true
+        const edges = new THREE.LineSegments(
+            new THREE.EdgesGeometry(mesh.geometry),
+            new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.28 })
+        )
+        mesh.add(edges)
+        scene.add(mesh)
+        fallingBlocks.push({
+            mesh,
+            velocity: new THREE.Vector3((index % 3 - 1) * 0.18, -0.3, ((index + 1) % 3 - 1) * 0.16),
+            settled: false
+        })
+    })
+}
+
 /**
  * Lights
  */
@@ -752,13 +815,14 @@ soundButton.addEventListener('click', (event) => {
     soundButton.textContent = musicMuted ? 'Włącz muzykę' : 'Wycisz muzykę'
 })
 
-const collidesAt = (x, z) => collisionWalls.some((wall) => {
+const collidesRadiusAt = (x, z, radius) => collisionWalls.some((wall) => {
     const nearestX = THREE.MathUtils.clamp(x, wall.x - wall.halfX, wall.x + wall.halfX)
     const nearestZ = THREE.MathUtils.clamp(z, wall.z - wall.halfZ, wall.z + wall.halfZ)
     const dx = x - nearestX
     const dz = z - nearestZ
-    return dx * dx + dz * dz < visitorRadius * visitorRadius
+    return dx * dx + dz * dz < radius * radius
 })
+const collidesAt = (x, z) => collidesRadiusAt(x, z, visitorRadius)
 
 const setMobileNavigation = (active) => {
     mobileControlsActive = active
@@ -902,6 +966,28 @@ window.addEventListener('keydown', (event) => {
 window.addEventListener('keyup', (event) => pressedKeys.delete(event.code))
 window.addEventListener('blur', () => pressedKeys.clear())
 
+const pushBlocksByVisitor = (visitorDelta) => {
+    const pushDistance = visitorDelta.length()
+    if (!pushDistance || !fallingBlocks.length) return
+    for (const block of fallingBlocks) {
+        if (block.mesh.position.y > 0.62) continue
+        const dx = block.mesh.position.x - camera.position.x
+        const dz = block.mesh.position.z - camera.position.z
+        const distance = Math.hypot(dx, dz)
+        if (distance >= 0.72) continue
+        const inverseDistance = 1 / Math.max(distance, 0.001)
+        const pushX = dx * inverseDistance * (pushDistance + 0.035)
+        const pushZ = dz * inverseDistance * (pushDistance + 0.035)
+        const nextX = block.mesh.position.x + pushX
+        const nextZ = block.mesh.position.z + pushZ
+        if (!collidesRadiusAt(nextX, block.mesh.position.z, 0.52)) block.mesh.position.x = nextX
+        if (!collidesRadiusAt(block.mesh.position.x, nextZ, 0.52)) block.mesh.position.z = nextZ
+        block.velocity.x += pushX * 5.5
+        block.velocity.z += pushZ * 5.5
+        block.settled = false
+    }
+}
+
 const updateWalkControls = (deltaTime) => {
     camera.rotation.set(pitch, yaw, 0, 'YXZ')
     const navigationActive = isTouchDevice ? mobileControlsActive : document.pointerLockElement === canvas
@@ -922,11 +1008,74 @@ const updateWalkControls = (deltaTime) => {
 
     // Resolve axes separately: a blocked visitor stops in front of the wall,
     // while a diagonal movement can continue naturally along it.
+    const visitorBeforeMove = camera.position.clone()
     const nextX = camera.position.x + movement.x
     if (!collidesAt(nextX, camera.position.z)) camera.position.x = nextX
     const nextZ = camera.position.z + movement.z
     if (!collidesAt(camera.position.x, nextZ)) camera.position.z = nextZ
     camera.position.y = eyeHeight
+    pushBlocksByVisitor(camera.position.clone().sub(visitorBeforeMove))
+}
+
+const updateBlockPhysics = (deltaTime, elapsedTime) => {
+    const navigationActive = isTouchDevice ? mobileControlsActive : document.pointerLockElement === canvas
+    const onTrigger = Math.abs(camera.position.x - blockTriggerPosition.x) <= 0.5
+        && Math.abs(camera.position.z - blockTriggerPosition.z) <= 0.5
+    if (navigationActive && onTrigger) startBlockRain()
+
+    const triggerPulse = 1.25 + Math.sin(elapsedTime * 3.2) * 0.45
+    blockTriggerMaterial.emissiveIntensity = blockRainStarted ? 0.7 : triggerPulse
+
+    const step = Math.min(deltaTime, 0.035)
+    for (const block of fallingBlocks) {
+        block.velocity.y -= 9.81 * step
+
+        const nextX = block.mesh.position.x + block.velocity.x * step
+        if (!collidesRadiusAt(nextX, block.mesh.position.z, 0.52)) block.mesh.position.x = nextX
+        else block.velocity.x *= -0.2
+
+        const nextZ = block.mesh.position.z + block.velocity.z * step
+        if (!collidesRadiusAt(block.mesh.position.x, nextZ, 0.52)) block.mesh.position.z = nextZ
+        else block.velocity.z *= -0.2
+
+        block.mesh.position.y += block.velocity.y * step
+        if (block.mesh.position.y <= 0.5) {
+            block.mesh.position.y = 0.5
+            if (Math.abs(block.velocity.y) > 0.55) block.velocity.y *= -0.16
+            else block.velocity.y = 0
+            const friction = Math.pow(0.055, step)
+            block.velocity.x *= friction
+            block.velocity.z *= friction
+            block.settled = Math.abs(block.velocity.x) + Math.abs(block.velocity.z) < 0.025
+            if (block.settled) {
+                block.velocity.x = 0
+                block.velocity.z = 0
+            }
+        }
+    }
+
+    // Prosta separacja klocków na podłodze zapobiega ich przenikaniu.
+    for (let first = 0; first < fallingBlocks.length; first++) {
+        const a = fallingBlocks[first]
+        if (a.mesh.position.y > 0.62) continue
+        for (let second = first + 1; second < fallingBlocks.length; second++) {
+            const b = fallingBlocks[second]
+            if (b.mesh.position.y > 0.62) continue
+            const dx = b.mesh.position.x - a.mesh.position.x
+            const dz = b.mesh.position.z - a.mesh.position.z
+            const distance = Math.hypot(dx, dz)
+            if (distance >= 1.02 || distance < 0.001) continue
+            const overlap = (1.02 - distance) * 0.5
+            const nx = dx / distance
+            const nz = dz / distance
+            const ax = a.mesh.position.x - nx * overlap
+            const az = a.mesh.position.z - nz * overlap
+            const bx = b.mesh.position.x + nx * overlap
+            const bz = b.mesh.position.z + nz * overlap
+            if (!collidesRadiusAt(ax, az, 0.52)) a.mesh.position.set(ax, a.mesh.position.y, az)
+            if (!collidesRadiusAt(bx, bz, 0.52)) b.mesh.position.set(bx, b.mesh.position.y, bz)
+        }
+    }
 }
 
 const updateDust = (deltaTime, elapsedTime) => {
@@ -1092,6 +1241,7 @@ const tick = () =>
     //}
 
     updateWalkControls(deltaTime)
+    updateBlockPhysics(deltaTime, elapsedTime)
     updateChildrenAmbience()
     updateDust(deltaTime, elapsedTime)
     updateSpecter(elapsedTime)
