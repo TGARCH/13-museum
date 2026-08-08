@@ -348,11 +348,11 @@ for (let index = 0; index < paperPositions.count; index++) {
 paperGeometry.computeVertexNormals()
 
 const paperLayouts = [
-    [-1.35, -0.85, -0.35], [-0.82, -0.96, 0.18], [-0.2, -0.86, -0.12], [0.42, -0.88, 0.31], [1.08, -0.76, -0.25],
-    [-1.48, -0.2, 0.2], [-0.9, -0.25, -0.42], [-0.25, -0.18, 0.37], [0.48, -0.23, -0.18], [1.26, -0.12, 0.28],
-    [-1.22, 0.42, -0.22], [-0.58, 0.38, 0.26], [0.04, 0.46, -0.34], [0.72, 0.38, 0.17], [1.38, 0.51, -0.27],
-    [-1.1, 1.02, 0.33], [-0.48, 1.0, -0.13], [0.18, 1.06, 0.28], [0.86, 1.02, -0.3],
-    [-0.72, 1.54, 0.17], [0.02, 1.6, -0.24], [0.76, 1.54, 0.31]
+    [-1.42, -0.92, -0.71], [0.38, 0.84, 1.04], [-0.76, 1.48, 0.16], [1.36, -0.28, -1.12], [-0.18, -1.22, 0.55],
+    [0.94, 1.34, -0.42], [-1.55, 0.36, 1.18], [0.12, 0.08, -0.88], [1.48, 0.62, 0.36], [-0.92, -0.36, -0.18],
+    [0.74, -0.86, 0.94], [-0.36, 1.12, -1.24], [1.12, 0.18, 0.08], [-1.22, 1.02, 0.72], [0.24, -0.58, -0.28],
+    [-1.62, -0.18, 0.43], [1.52, 1.12, -0.74], [-0.48, -0.82, 1.31], [0.58, 1.58, 0.62],
+    [-1.02, 0.54, -1.02], [1.18, -1.02, 0.22], [-0.06, 1.72, -0.52]
 ]
 
 const coverImages = [
@@ -361,8 +361,8 @@ const coverImages = [
     '0_auta-i-samoloty-600x860.jpg'
 ]
 const patternImages = [
-    '01-psy-4-600x848.jpg', '05-czlowiek-13-600x849.jpg', '06-pojazdy-11-600x424.jpg',
-    '01-psy-4-600x848.jpg', '05-czlowiek-13-600x849.jpg', '06-pojazdy-11-600x424.jpg'
+    'pattern-koty.jpg', '01-psy-4-600x848.jpg', '05-czlowiek-13-600x849.jpg',
+    'pattern-jedzenie.jpg', 'pattern-ptaki.jpg', '06-pojazdy-11-600x424.jpg'
 ]
 const printedImages = [...coverImages, ...patternImages]
 
@@ -374,6 +374,10 @@ paperLayouts.forEach(([x, z, rotation], index) => {
         const imageName = printedImages[index - 10]
         const map = textureLoader.load(`/textures/drawing-mess-web/${imageName}`)
         map.colorSpace = THREE.SRGBColorSpace
+        if (imageName === '06-pojazdy-11-600x424.jpg') {
+            map.center.set(0.5, 0.5)
+            map.rotation = Math.PI * 0.5
+        }
         material = new THREE.MeshStandardMaterial({ map, color: 0xffffff, roughness: 0.88, side: THREE.DoubleSide })
     }
     const paper = new THREE.Mesh(paperGeometry, material)
@@ -403,8 +407,9 @@ crayonLayouts.forEach(([x, z, rotation], index) => {
     lead.position.x = 0.34
     lead.rotation.z = -Math.PI * 0.5
     crayon.add(body, wood, lead)
-    crayon.position.set(x, 0.035, z)
+    crayon.position.set(x, 0.018, z)
     crayon.rotation.y = rotation
+    crayon.scale.setScalar(0.5)
     crayon.traverse((part) => { if (part.isMesh) part.castShadow = true })
     drawingMess.add(crayon)
 })
