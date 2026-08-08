@@ -525,7 +525,8 @@ const blockTriggerEdges = new THREE.LineSegments(
 blockTrigger.add(blockTriggerEdges)
 
 const fallingBlocks = []
-let blockRainStarted = false
+let blockTriggerOccupied = false
+let blockRainCount = 0
 const blockColors = [0xff4d61, 0xffa62b, 0xffdf4d, 0x5bd46d, 0x46c7e8, 0x4f78ff, 0x9d5cff, 0xf05bc3]
 const blockSpawnPoints = [
     [-11.5, -11], [-8.8, -7.5], [-11.2, -2.5], [-10.2, 3.8], [-11.4, 9.2],
@@ -535,10 +536,14 @@ const blockSpawnPoints = [
 ]
 
 const startBlockRain = () => {
-    if (blockRainStarted) return
-    blockRainStarted = true
-    blockTriggerMaterial.color.setHex(0x274c42)
-    blockTriggerMaterial.emissive.setHex(0x45ffc3)
+    blockRainCount++
+
+    // Zachowaj rozsądny koszt sceny po wielu uruchomieniach pola.
+    while (fallingBlocks.length > 42) {
+        const oldest = fallingBlocks.shift()
+        scene.remove(oldest.mesh)
+        oldest.mesh.material.dispose()
+    }
 
     blockSpawnPoints.forEach(([x, z], index) => {
         const material = new THREE.MeshStandardMaterial({
@@ -549,7 +554,8 @@ const startBlockRain = () => {
             emissiveIntensity: 0.08
         })
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material)
-        mesh.position.set(x, 6.5 + (index % 6) * 1.15, z)
+        const offset = ((blockRainCount + index) % 3 - 1) * 0.16
+        mesh.position.set(x + offset, 6.5 + (index % 6) * 1.15, z - offset)
         mesh.rotation.y = (index * 0.71) % Math.PI
         mesh.castShadow = true
         mesh.receiveShadow = true
@@ -566,6 +572,31 @@ const startBlockRain = () => {
         })
     })
 }
+
+const createEffectPad = (x, z, color, emissive) => {
+    const material = new THREE.MeshStandardMaterial({
+        color,
+        emissive,
+        emissiveIntensity: 1.3,
+        transparent: true,
+        opacity: 0.76,
+        roughness: 0.25,
+        metalness: 0.3
+    })
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 0.035, 1), material)
+    mesh.position.set(x, 0.025, z)
+    const edges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(mesh.geometry),
+        new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.78 })
+    )
+    mesh.add(edges)
+    scene.add(mesh)
+    return { mesh, material, position: mesh.position.clone(), occupied: false }
+}
+
+const alarmPad = createEffectPad(-12.15, 7.7, 0x671c22, 0xff2638)
+const discoPad = createEffectPad(12.15, 7.7, 0x163c68, 0x35d9ff)
+let lightingMode = 'normal'
 
 /**
  * Lights
@@ -602,6 +633,28 @@ const hemisphereLight = new THREE.HemisphereLight(
     0xaafffb,0xffffaa,
     2)
 scene.add(hemisphereLight)
+
+const alarmLights = [
+    new THREE.PointLight(0xff142d, 0, 18, 1.4),
+    new THREE.PointLight(0xff142d, 0, 18, 1.4),
+    new THREE.PointLight(0xff142d, 0, 18, 1.4),
+    new THREE.PointLight(0xff142d, 0, 18, 1.4)
+]
+alarmLights[0].position.set(-9, 4.8, -9)
+alarmLights[1].position.set(9, 4.8, -9)
+alarmLights[2].position.set(-9, 4.8, 9)
+alarmLights[3].position.set(9, 4.8, 9)
+scene.add(...alarmLights)
+
+const discoColors = [0xff2d87, 0x35e6ff, 0x8d5cff, 0xffca3a, 0x4dff88, 0xff5f38]
+const discoLights = discoColors.map((color, index) => {
+    const light = new THREE.SpotLight(color, 0, 32, Math.PI * 0.095, 0.55, 1.15)
+    const angle = index / discoColors.length * Math.PI * 2
+    light.position.set(Math.cos(angle) * 11.5, 5.2, Math.sin(angle) * 11.5)
+    light.target.position.set(0, 0.4, 0)
+    scene.add(light, light.target)
+    return { light, phase: angle }
+})
 
 //const pointLight = new THREE.PointLight(0xffffff, 10)
 //pointLight.position.set(0,5,0)
@@ -1021,10 +1074,13 @@ const updateBlockPhysics = (deltaTime, elapsedTime) => {
     const navigationActive = isTouchDevice ? mobileControlsActive : document.pointerLockElement === canvas
     const onTrigger = Math.abs(camera.position.x - blockTriggerPosition.x) <= 0.5
         && Math.abs(camera.position.z - blockTriggerPosition.z) <= 0.5
-    if (navigationActive && onTrigger) startBlockRain()
+    if (navigationActive && onTrigger && !blockTriggerOccupied) startBlockRain()
+    blockTriggerOccupied = navigationActive && onTrigger
 
     const triggerPulse = 1.25 + Math.sin(elapsedTime * 3.2) * 0.45
-    blockTriggerMaterial.emissiveIntensity = blockRainStarted ? 0.7 : triggerPulse
+    blockTriggerMaterial.color.setHex(blockTriggerOccupied ? 0x274c42 : 0x4c2b78)
+    blockTriggerMaterial.emissive.setHex(blockTriggerOccupied ? 0x45ffc3 : 0x8b54ff)
+    blockTriggerMaterial.emissiveIntensity = blockTriggerOccupied ? 1.9 : triggerPulse
 
     const step = Math.min(deltaTime, 0.035)
     for (const block of fallingBlocks) {
@@ -1076,6 +1132,57 @@ const updateBlockPhysics = (deltaTime, elapsedTime) => {
             if (!collidesRadiusAt(bx, bz, 0.52)) b.mesh.position.set(bx, b.mesh.position.y, bz)
         }
     }
+}
+
+const updateLightingEffects = (deltaTime, elapsedTime) => {
+    const navigationActive = isTouchDevice ? mobileControlsActive : document.pointerLockElement === canvas
+    const onPad = (pad) => Math.abs(camera.position.x - pad.position.x) <= 0.5
+        && Math.abs(camera.position.z - pad.position.z) <= 0.5
+
+    const onAlarmPad = onPad(alarmPad)
+    if (navigationActive && onAlarmPad && !alarmPad.occupied) {
+        lightingMode = lightingMode === 'alarm' ? 'normal' : 'alarm'
+    }
+    alarmPad.occupied = onAlarmPad
+
+    const onDiscoPad = onPad(discoPad)
+    if (navigationActive && onDiscoPad && !discoPad.occupied) {
+        lightingMode = lightingMode === 'disco' ? 'normal' : 'disco'
+    }
+    discoPad.occupied = onDiscoPad
+
+    const blend = 1 - Math.exp(-deltaTime * 4.5)
+    const targetAmbient = lightingMode === 'normal' ? 2 : lightingMode === 'alarm' ? 0.045 : 0.2
+    const targetHemisphere = lightingMode === 'normal' ? 2 : lightingMode === 'alarm' ? 0.035 : 0.28
+    ambientLight.intensity = THREE.MathUtils.lerp(ambientLight.intensity, targetAmbient, blend)
+    hemisphereLight.intensity = THREE.MathUtils.lerp(hemisphereLight.intensity, targetHemisphere, blend)
+
+    const alarmFlash = lightingMode === 'alarm'
+        ? 5 + Math.pow(Math.max(0, Math.sin(elapsedTime * 7.5)), 5) * 34
+        : 0
+    alarmLights.forEach((light, index) => {
+        const alternatingFlash = index % 2 === 0
+            ? alarmFlash
+            : 5 + Math.pow(Math.max(0, Math.sin(elapsedTime * 7.5 + Math.PI)), 5) * 34
+        light.intensity = lightingMode === 'alarm' ? alternatingFlash : 0
+    })
+
+    discoLights.forEach((entry, index) => {
+        const active = lightingMode === 'disco'
+        entry.light.intensity = active ? 42 + Math.sin(elapsedTime * 2.1 + entry.phase) * 12 : 0
+        if (active) {
+            const sweep = elapsedTime * (0.48 + index * 0.035) + entry.phase
+            entry.light.target.position.set(
+                Math.sin(sweep * 1.17) * 12,
+                0.45 + (Math.sin(sweep * 1.9) * 0.5 + 0.5) * 2.4,
+                Math.cos(sweep * 0.91) * 12
+            )
+        }
+    })
+
+    const padPulse = 1.15 + Math.sin(elapsedTime * 3.4) * 0.35
+    alarmPad.material.emissiveIntensity = lightingMode === 'alarm' ? 2.7 : padPulse
+    discoPad.material.emissiveIntensity = lightingMode === 'disco' ? 2.7 : padPulse
 }
 
 const updateDust = (deltaTime, elapsedTime) => {
@@ -1242,6 +1349,7 @@ const tick = () =>
 
     updateWalkControls(deltaTime)
     updateBlockPhysics(deltaTime, elapsedTime)
+    updateLightingEffects(deltaTime, elapsedTime)
     updateChildrenAmbience()
     updateDust(deltaTime, elapsedTime)
     updateSpecter(elapsedTime)
