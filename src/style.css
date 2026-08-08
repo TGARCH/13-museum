@@ -234,7 +234,7 @@ body {
 
 .mobile-controls { display: none; }
 
-@media (pointer: coarse) {
+@media (pointer: coarse) and (hover: none) {
     html, body, .webgl { touch-action: none; }
 
     .instructions { display: none; }
@@ -333,7 +333,7 @@ body {
     .mobile-interact-button[hidden] { display: none; }
 }
 
-@media (pointer: coarse) and (orientation: portrait) {
+@media (pointer: coarse) and (hover: none) and (orientation: portrait) {
     .mobile-look-hint { top: 62px; }
     .youtube-screen__hint { font-size: 10px; }
 }
