@@ -757,6 +757,7 @@ const mobileControls = document.querySelector('.mobile-controls')
 const joystick = document.querySelector('.mobile-joystick')
 const joystickKnob = document.querySelector('.mobile-joystick__knob')
 const mobileRunButton = document.querySelector('.mobile-run-button')
+const mobileJumpButton = document.querySelector('.mobile-jump-button')
 const mobileInteractButton = document.querySelector('.mobile-interact-button')
 const mobilePauseButton = document.querySelector('.mobile-pause-button')
 let hasEnteredMuseum = false
@@ -768,6 +769,8 @@ let joystickPointerId = null
 let lookPointerId = null
 let lastLookX = 0
 let lastLookY = 0
+let playerVerticalVelocity = 0
+let playerGrounded = true
 
 let audioContext = null
 let ambientGain = null
@@ -1006,6 +1009,16 @@ const stopMobileRunning = () => {
 }
 mobileRunButton.addEventListener('pointerup', stopMobileRunning)
 mobileRunButton.addEventListener('pointercancel', stopMobileRunning)
+const requestJump = () => {
+    const navigationActive = isTouchDevice ? mobileControlsActive : document.pointerLockElement === canvas
+    if (!navigationActive || !playerGrounded) return
+    playerVerticalVelocity = 5.05
+    playerGrounded = false
+}
+mobileJumpButton.addEventListener('pointerdown', (event) => {
+    event.stopPropagation()
+    requestJump()
+})
 mobilePauseButton.addEventListener('click', (event) => {
     event.stopPropagation()
     setMobileNavigation(false)
@@ -1039,7 +1052,8 @@ document.addEventListener('mousemove', (event) => {
 
 window.addEventListener('keydown', (event) => {
     pressedKeys.add(event.code)
-    if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) {
+    if (event.code === 'Space' && !event.repeat) requestJump()
+    if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(event.code)) {
         event.preventDefault()
     }
 })
@@ -1051,6 +1065,8 @@ const pushBlocksByVisitor = (visitorDelta) => {
     if (!pushDistance || !fallingBlocks.length) return
     for (const block of fallingBlocks) {
         if (block.mesh.position.y > 0.62) continue
+        const feetY = camera.position.y - eyeHeight
+        if (feetY >= block.mesh.position.y + 0.43) continue
         const dx = block.mesh.position.x - camera.position.x
         const dz = block.mesh.position.z - camera.position.z
         const distance = Math.hypot(dx, dz)
@@ -1066,6 +1082,45 @@ const pushBlocksByVisitor = (visitorDelta) => {
         block.velocity.z += pushZ * 5.5
         block.settled = false
     }
+}
+
+const visitorCollidesWithBlock = (x, z) => {
+    const feetY = camera.position.y - eyeHeight
+    return fallingBlocks.some((block) => {
+        const top = block.mesh.position.y + 0.5
+        if (feetY >= top - 0.07) return false
+        const nearestX = THREE.MathUtils.clamp(x, block.mesh.position.x - 0.5, block.mesh.position.x + 0.5)
+        const nearestZ = THREE.MathUtils.clamp(z, block.mesh.position.z - 0.5, block.mesh.position.z + 0.5)
+        const dx = x - nearestX
+        const dz = z - nearestZ
+        return dx * dx + dz * dz < visitorRadius * visitorRadius
+    })
+}
+
+const blockSupportsVisitor = (block) => {
+    const dx = Math.abs(camera.position.x - block.mesh.position.x)
+    const dz = Math.abs(camera.position.z - block.mesh.position.z)
+    return dx <= 0.5 + visitorRadius * 0.65 && dz <= 0.5 + visitorRadius * 0.65
+}
+
+const findSupportNear = (feetY) => {
+    let support = Math.abs(feetY) <= 0.14 ? 0 : null
+    for (const block of fallingBlocks) {
+        if (!blockSupportsVisitor(block)) continue
+        const top = block.mesh.position.y + 0.5
+        if (top <= feetY + 0.11 && feetY - top <= 0.16 && (support === null || top > support)) support = top
+    }
+    return support
+}
+
+const findLandingSurface = (previousFeetY, nextFeetY) => {
+    let landing = previousFeetY >= 0 && nextFeetY <= 0 ? 0 : null
+    for (const block of fallingBlocks) {
+        if (!blockSupportsVisitor(block)) continue
+        const top = block.mesh.position.y + 0.5
+        if (previousFeetY >= top - 0.025 && nextFeetY <= top && (landing === null || top > landing)) landing = top
+    }
+    return landing
 }
 
 const updateWalkControls = (deltaTime) => {
@@ -1093,8 +1148,42 @@ const updateWalkControls = (deltaTime) => {
     if (!collidesAt(nextX, camera.position.z)) camera.position.x = nextX
     const nextZ = camera.position.z + movement.z
     if (!collidesAt(camera.position.x, nextZ)) camera.position.z = nextZ
-    camera.position.y = eyeHeight
     pushBlocksByVisitor(camera.position.clone().sub(visitorBeforeMove))
+    if (visitorCollidesWithBlock(camera.position.x, camera.position.z)) {
+        camera.position.x = visitorBeforeMove.x
+        camera.position.z = visitorBeforeMove.z
+    }
+}
+
+const updateVerticalMovement = (deltaTime) => {
+    const navigationActive = isTouchDevice ? mobileControlsActive : document.pointerLockElement === canvas
+    if (!navigationActive) return
+    const step = Math.min(deltaTime, 0.035)
+    const feetY = camera.position.y - eyeHeight
+
+    if (playerGrounded) {
+        const support = findSupportNear(feetY)
+        if (support !== null) {
+            camera.position.y = eyeHeight + support
+            playerVerticalVelocity = 0
+            return
+        }
+        playerGrounded = false
+    }
+
+    const previousFeetY = camera.position.y - eyeHeight
+    playerVerticalVelocity -= 9.81 * step
+    const nextFeetY = previousFeetY + playerVerticalVelocity * step
+    if (playerVerticalVelocity <= 0) {
+        const landing = findLandingSurface(previousFeetY, nextFeetY)
+        if (landing !== null) {
+            camera.position.y = eyeHeight + landing
+            playerVerticalVelocity = 0
+            playerGrounded = true
+            return
+        }
+    }
+    camera.position.y = eyeHeight + Math.max(nextFeetY, 0)
 }
 
 const updateBlockPhysics = (deltaTime, elapsedTime) => {
@@ -1392,6 +1481,7 @@ const tick = () =>
 
     updateWalkControls(deltaTime)
     updateBlockPhysics(deltaTime, elapsedTime)
+    updateVerticalMovement(deltaTime)
     updateLightingEffects(deltaTime, elapsedTime)
     updateChildrenAmbience()
     updateDust(deltaTime, elapsedTime)
