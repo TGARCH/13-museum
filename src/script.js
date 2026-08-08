@@ -19,20 +19,38 @@ const scene = new THREE.Scene()
 // Pionowe ekrany YouTube Shorts w narożniku zaznaczonym na podglądzie.
 const videoScreens = []
 const screenFrameMaterial = new THREE.MeshStandardMaterial({
-    color: 0x090b0b,
-    roughness: 0.32,
-    metalness: 0.48
+    color: 0x173449,
+    emissive: 0x2de5ff,
+    emissiveIntensity: 1.7,
+    roughness: 0.16,
+    metalness: 0.78,
+    transparent: true,
+    opacity: 0.72,
+    depthWrite: false
+})
+
+const screenGlowMaterial = new THREE.MeshBasicMaterial({
+    color: 0x42e9ff,
+    transparent: true,
+    opacity: 0.11,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide
 })
 
 function createYouTubeScreen(videoId, position, rotationY) {
     const frame = new THREE.Mesh(
-        new THREE.BoxGeometry(1.22, 2.12, 0.08),
+        new THREE.BoxGeometry(1.62, 2.82, 0.055),
         screenFrameMaterial
     )
     frame.position.copy(position)
     frame.rotation.y = rotationY
     frame.castShadow = true
     scene.add(frame)
+
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.92, 3.12), screenGlowMaterial.clone())
+    glow.position.copy(position)
+    glow.rotation.y = rotationY
 
     const element = document.createElement('div')
     element.className = 'youtube-screen'
@@ -50,7 +68,7 @@ function createYouTubeScreen(videoId, position, rotationY) {
     const screen = new CSS3DObject(element)
     screen.position.copy(position)
     screen.rotation.y = rotationY
-    screen.scale.setScalar(0.003)
+    screen.scale.setScalar(0.0035)
 
     // Przesunięcie powierzchni odtwarzacza przed czarną ramę.
     const normal = new THREE.Vector3(0, 0, 1).applyAxisAngle(
@@ -58,26 +76,41 @@ function createYouTubeScreen(videoId, position, rotationY) {
         rotationY
     )
     screen.position.addScaledVector(normal, 0.045)
+    glow.position.addScaledVector(normal, -0.02)
+    scene.add(glow)
     scene.add(screen)
 
     videoScreens.push({
         object: screen,
         frame,
+        glow,
         iframe: element.querySelector('iframe'),
         normal,
+        baseY: position.y,
+        phase: videoScreens.length * 1.37,
         loaded: false
     })
 }
 
-// Dwa ekrany na prostopadłych ścianach przy zewnętrznym narożniku.
+// Cztery lewitujące ekrany: po dwa na każdej z prostopadłych ścian.
 createYouTubeScreen(
     'sTjfavBiKaw',
-    new THREE.Vector3(11.9, 1.65, -13.92),
+    new THREE.Vector3(10.55, 1.78, -13.48),
     0
 )
 createYouTubeScreen(
     'w8Gev2XEjEw',
-    new THREE.Vector3(13.92, 1.65, -11.9),
+    new THREE.Vector3(13.48, 1.78, -10.55),
+    -Math.PI * 0.5
+)
+createYouTubeScreen(
+    'U51P0KtXeDA',
+    new THREE.Vector3(12.35, 1.78, -13.48),
+    0
+)
+createYouTubeScreen(
+    '8cuxCmHW_4A',
+    new THREE.Vector3(13.48, 1.78, -12.35),
     -Math.PI * 0.5
 )
 
@@ -458,6 +491,7 @@ const right = new THREE.Vector3()
 const startPanel = document.querySelector('.start-panel')
 const startButton = document.querySelector('.start-button')
 const soundButton = document.querySelector('.sound-button')
+let hasEnteredMuseum = false
 
 let audioContext = null
 let ambientGain = null
@@ -546,6 +580,7 @@ const collidesAt = (x, z) => collisionWalls.some((wall) => {
 
 const requestMuseumControls = () => canvas.requestPointerLock()
 startButton.addEventListener('click', () => {
+    hasEnteredMuseum = true
     startAmbientMusic()
     requestMuseumControls()
 })
@@ -560,6 +595,13 @@ canvas.addEventListener('click', () => {
 document.addEventListener('pointerlockchange', () => {
     const active = document.pointerLockElement === canvas
     startPanel.classList.toggle('hidden', active)
+    startPanel.classList.toggle('paused', !active && hasEnteredMuseum)
+    startButton.textContent = hasEnteredMuseum ? 'Wróć do zwiedzania' : 'Wejdź do muzeum'
+    if (!active) {
+        specterTag.hidden = true
+        specterTag.classList.remove('is-near', 'is-gazed')
+        specterTagFocused = false
+    }
     if (!active) pressedKeys.clear()
 })
 
@@ -659,11 +701,15 @@ const updateSpecter = (elapsedTime) => {
     specterGroup.getWorldPosition(specterTagWorld)
     specterTagWorld.y += 1.05
     specterTagWorld.project(camera)
+    const walking = document.pointerLockElement === canvas
+    const closeEnough = camera.position.distanceTo(specterGroup.position) < 4.25
     const inFront = specterTagWorld.z > -1 && specterTagWorld.z < 1
-    specterTagFocused = inFront && Math.abs(specterTagWorld.x) < 0.2 && Math.abs(specterTagWorld.y) < 0.2
+    const visible = walking && closeEnough && inFront
+    specterTagFocused = visible && Math.abs(specterTagWorld.x) < 0.2 && Math.abs(specterTagWorld.y) < 0.2
+    specterTag.classList.toggle('is-near', visible)
     specterTag.classList.toggle('is-gazed', specterTagFocused)
-    specterTag.hidden = !inFront
-    if (inFront) {
+    specterTag.hidden = !visible
+    if (visible) {
         specterTag.style.left = `${(specterTagWorld.x * 0.5 + 0.5) * sizes.width}px`
         specterTag.style.top = `${(-specterTagWorld.y * 0.5 + 0.5) * sizes.height}px`
     }
@@ -684,8 +730,13 @@ cssRenderer.setSize(sizes.width, sizes.height)
 cssRenderer.domElement.className = 'css3d-layer'
 document.body.appendChild(cssRenderer.domElement)
 
-const updateVideoScreens = () => {
+const updateVideoScreens = (elapsedTime) => {
     for (const screen of videoScreens) {
+        const floatY = screen.baseY + Math.sin(elapsedTime * 0.72 + screen.phase) * 0.055
+        screen.object.position.y = floatY
+        screen.frame.position.y = floatY
+        screen.glow.position.y = floatY
+        screen.glow.material.opacity = 0.085 + Math.sin(elapsedTime * 1.8 + screen.phase) * 0.025
         const toCamera = new THREE.Vector3()
             .subVectors(camera.position, screen.object.position)
         const distance = toCamera.length()
@@ -726,7 +777,7 @@ const tick = () =>
     updateWalkControls(deltaTime)
     updateDust(deltaTime, elapsedTime)
     updateSpecter(elapsedTime)
-    updateVideoScreens()
+    updateVideoScreens(elapsedTime)
 
     // Render
     renderer.render(scene, camera)
