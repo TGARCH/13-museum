@@ -657,7 +657,8 @@ let musicMuted = false
 let childrenAmbienceGain = null
 let childrenAmbienceSource = null
 
-// Mixkit SFX 2264 — "Busy park playground with kids playing", Mixkit License.
+// Mixkit SFX 427 — "Laughing children indoors", Mixkit License.
+// Plik jest lokalnie przefiltrowany, aby ograniczyć piski i szum tła.
 const startChildrenAmbience = async () => {
     if (!audioContext || childrenAmbienceSource) return
     try {
@@ -945,7 +946,7 @@ const updateChildrenAmbience = () => {
     const dz = camera.position.z - drawingMess.position.z
     const distance = Math.hypot(dx, dz)
     const proximity = 1 - THREE.MathUtils.clamp((distance - 1.2) / 9, 0, 1)
-    const targetVolume = proximity * proximity * 0.14
+    const targetVolume = proximity * proximity * 0.075
     childrenAmbienceGain.gain.setTargetAtTime(
         Math.max(0.0001, targetVolume),
         audioContext.currentTime,
