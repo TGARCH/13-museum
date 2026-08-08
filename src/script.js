@@ -57,8 +57,9 @@ function createYouTubeScreen(videoId, position, rotationY) {
     element.innerHTML = `
         <iframe
             title="Film Rysunek z Fabryczką"
-            data-src="https://www.youtube-nocookie.com/embed/${videoId}?rel=0&playsinline=1&modestbranding=1&autoplay=1&mute=1&enablejsapi=1"
+            data-src="https://www.youtube.com/embed/${videoId}?rel=0&playsinline=1&modestbranding=1&autoplay=1&mute=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}"
             loading="lazy"
+            referrerpolicy="strict-origin-when-cross-origin"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowfullscreen
         ></iframe>
@@ -759,6 +760,14 @@ const updateVideoScreens = (elapsedTime) => {
                 args: []
             }), '*')
             screen.playingNearby = visible
+        }
+
+        // Usuń nieaktywny odtwarzacz po odejściu od narożnika. Dzięki temu
+        // YouTube nie widzi kilku automatycznie grających ramek jednocześnie.
+        if (screen.loaded && distance > 10.5) {
+            screen.iframe.src = 'about:blank'
+            screen.loaded = false
+            screen.playingNearby = false
         }
     }
 }
