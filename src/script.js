@@ -351,18 +351,14 @@ const paperLayouts = [
     [-1.42, -0.92, -0.71], [0.38, 0.84, 1.04], [-0.76, 1.48, 0.16], [1.36, -0.28, -1.12], [-0.18, -1.22, 0.55],
     [0.94, 1.34, -0.42], [-1.55, 0.36, 1.18], [0.12, 0.08, -0.88], [1.48, 0.62, 0.36], [-0.92, -0.36, -0.18],
     [0.74, -0.86, 0.94], [-0.36, 1.12, -1.24], [1.12, 0.18, 0.08], [-1.22, 1.02, 0.72], [0.24, -0.58, -0.28],
-    [-1.62, -0.18, 0.43], [1.52, 1.12, -0.74], [-0.48, -0.82, 1.31], [0.58, 1.58, 0.62],
-    [-1.02, 0.54, -1.02], [1.18, -1.02, 0.22], [-0.06, 1.72, -0.52]
+    [-1.62, -0.18, 0.43]
 ]
 
 const coverImages = [
-    '0_koty.jpg', '0_psy-600x860.jpg', '0_portrety-600x861.jpg',
-    '0_jedzenie-i-rosliny-600x861.jpg', '0_ptaki-i-inne-zwierzeta.jpg',
-    '0_auta-i-samoloty-600x860.jpg'
+    '0_koty.jpg', '0_jedzenie-i-rosliny-600x861.jpg', '0_ptaki-i-inne-zwierzeta.jpg'
 ]
 const patternImages = [
-    'pattern-koty.jpg', '01-psy-4-600x848.jpg', '05-czlowiek-13-600x849.jpg',
-    'pattern-jedzenie.jpg', 'pattern-ptaki.jpg', '06-pojazdy-11-600x424.jpg'
+    '01-psy-4-600x848.jpg', '05-czlowiek-13-600x849.jpg', '06-pojazdy-11-600x424.jpg'
 ]
 const printedImages = [...coverImages, ...patternImages]
 
@@ -389,30 +385,89 @@ paperLayouts.forEach(([x, z, rotation], index) => {
 })
 
 const crayonColors = [0xef3e42, 0xff8a32, 0xffd83d, 0x54b948, 0x24b7b0, 0x3185e5, 0x7756c5, 0xd64da1, 0x7a4b2c, 0x20262c]
-const crayonLayouts = [
-    [-1.55, -1.22, 0.2], [-0.96, -1.35, -0.42], [-0.35, -1.25, 0.68], [0.32, -1.3, -0.18], [1.02, -1.2, 0.42],
-    [-1.62, 0.73, -0.36], [-1.38, 1.33, 0.58], [1.52, -0.44, -0.62], [1.48, 0.48, 0.24], [1.35, 1.24, -0.4]
-]
-crayonLayouts.forEach(([x, z, rotation], index) => {
+const crayonBodyGeometry = new THREE.CylinderGeometry(0.026, 0.026, 0.42, 8)
+const crayonWoodGeometry = new THREE.ConeGeometry(0.026, 0.11, 8)
+const crayonLeadGeometry = new THREE.ConeGeometry(0.011, 0.045, 8)
+const crayonWoodMaterial = new THREE.MeshStandardMaterial({ color: 0xe8c38f, roughness: 0.82 })
+
+const createMagicCrayon = (colorIndex, scale = 1) => {
     const crayon = new THREE.Group()
-    const color = crayonColors[index]
+    const color = crayonColors[colorIndex % crayonColors.length]
     const bodyMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.62 })
-    const woodMaterial = new THREE.MeshStandardMaterial({ color: 0xe8c38f, roughness: 0.82 })
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.42, 8), bodyMaterial)
+    const body = new THREE.Mesh(crayonBodyGeometry, bodyMaterial)
     body.rotation.z = Math.PI * 0.5
-    const wood = new THREE.Mesh(new THREE.ConeGeometry(0.026, 0.11, 8), woodMaterial)
+    const wood = new THREE.Mesh(crayonWoodGeometry, crayonWoodMaterial)
     wood.position.x = 0.265
     wood.rotation.z = -Math.PI * 0.5
-    const lead = new THREE.Mesh(new THREE.ConeGeometry(0.011, 0.045, 8), bodyMaterial)
+    const lead = new THREE.Mesh(crayonLeadGeometry, bodyMaterial)
     lead.position.x = 0.34
     lead.rotation.z = -Math.PI * 0.5
-    crayon.add(body, wood, lead)
-    crayon.position.set(x, 0.018, z)
-    crayon.rotation.y = rotation
-    crayon.scale.setScalar(0.5)
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: dustTexture,
+        color,
+        transparent: true,
+        opacity: 0.48,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+    }))
+    glow.scale.setScalar(0.32)
+    crayon.add(body, wood, lead, glow)
+    crayon.scale.setScalar(scale)
+    crayon.userData.glow = glow
     crayon.traverse((part) => { if (part.isMesh) part.castShadow = true })
+    return crayon
+}
+
+const workshopMagicCrayons = []
+for (let index = 0; index < 10; index++) {
+    const crayon = createMagicCrayon(index, 0.5)
     drawingMess.add(crayon)
+    workshopMagicCrayons.push({
+        object: crayon,
+        phase: index * Math.PI * 0.2,
+        radius: 0.62 + (index % 4) * 0.23
+    })
+}
+
+const roamingCrayonBases = [
+    [-11, 2.2, -10], [-4, 3.1, -12], [4, 2.5, -11], [11, 3.4, -8],
+    [-11, 3.5, 7], [-4, 2.4, 11], [4, 3.6, 10], [11, 2.2, 8],
+    [-10, 2.8, 2.5], [-3, 3.7, -3], [3, 2.2, 3.2], [10, 3.2, -1]
+]
+const roamingMagicCrayons = roamingCrayonBases.map(([x, y, z], index) => {
+    const crayon = createMagicCrayon(index + 2, 0.72)
+    crayon.position.set(x, y, z)
+    scene.add(crayon)
+    return { object: crayon, base: new THREE.Vector3(x, y, z), phase: index * 1.73 }
 })
+
+const updateMagicCrayons = (elapsedTime) => {
+    workshopMagicCrayons.forEach((crayon, index) => {
+        const angle = elapsedTime * (0.48 + (index % 3) * 0.08) + crayon.phase
+        crayon.object.position.set(
+            Math.cos(angle) * crayon.radius,
+            0.38 + Math.sin(elapsedTime * 1.7 + crayon.phase) * 0.16 + (index % 2) * 0.1,
+            Math.sin(angle) * crayon.radius * 0.72 + 0.18
+        )
+        crayon.object.rotation.set(Math.sin(angle * 1.4) * 0.45, -angle, Math.cos(angle * 1.8) * 0.35)
+        const pulse = 0.7 + Math.sin(elapsedTime * 4.6 + crayon.phase) * 0.3
+        crayon.object.userData.glow.material.opacity = 0.28 + pulse * 0.42
+        crayon.object.userData.glow.scale.setScalar(0.28 + pulse * 0.2)
+    })
+
+    roamingMagicCrayons.forEach((crayon, index) => {
+        const time = elapsedTime + crayon.phase
+        crayon.object.position.set(
+            crayon.base.x + Math.sin(time * 0.34) * 1.2,
+            crayon.base.y + Math.sin(time * 0.82) * 0.42,
+            crayon.base.z + Math.cos(time * 0.29) * 1.0
+        )
+        crayon.object.rotation.set(Math.sin(time * 0.7) * 0.8, time * 0.42, Math.cos(time * 0.53) * 0.65)
+        const flash = Math.pow(Math.max(0, Math.sin(time * 2.8)), 7)
+        crayon.object.userData.glow.material.opacity = 0.22 + flash * 0.78
+        crayon.object.userData.glow.scale.setScalar(0.34 + flash * 0.42)
+    })
+}
 /*
 const environmentMapTexture = cubeTextureLoader.load([
     '/textures/environmentMaps/0/px.png',
@@ -882,6 +937,7 @@ const tick = () =>
     updateWalkControls(deltaTime)
     updateDust(deltaTime, elapsedTime)
     updateSpecter(elapsedTime)
+    updateMagicCrayons(elapsedTime)
     updateVideoScreens(elapsedTime)
 
     // Render
