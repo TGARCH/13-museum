@@ -12,7 +12,10 @@ import { CSS3DObject, CSS3DRenderer } from 'three/examples/jsm/renderers/CSS3DRe
  */
 // Canvas
 const canvas = document.querySelector('canvas.webgl')
-const isTouchDevice = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0
+// Nie traktuj laptopów z dodatkowym ekranem dotykowym jak telefonów.
+// Tryb mobilny włączamy tylko wtedy, gdy głównym wskaźnikiem jest dotyk
+// i urządzenie nie oferuje klasycznego najechania kursorem.
+const isTouchDevice = window.matchMedia('(pointer: coarse) and (hover: none)').matches
 
 // Scene
 const scene = new THREE.Scene()
