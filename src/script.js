@@ -646,9 +646,12 @@ alarmLights[2].position.set(-9, 4.8, 9)
 alarmLights[3].position.set(9, 4.8, 9)
 scene.add(...alarmLights)
 
-const discoColors = [0xff2d87, 0x35e6ff, 0x8d5cff, 0xffca3a, 0x4dff88, 0xff5f38]
+const discoColors = [
+    0xff2d87, 0x35e6ff, 0x8d5cff, 0xffca3a, 0x4dff88,
+    0xff5f38, 0x3f7cff, 0xe942ff, 0x58ffd5, 0xff7b2d
+]
 const discoLights = discoColors.map((color, index) => {
-    const light = new THREE.SpotLight(color, 0, 32, Math.PI * 0.095, 0.55, 1.15)
+    const light = new THREE.SpotLight(color, 0, 34, Math.PI * 0.105, 0.5, 1.1)
     const angle = index / discoColors.length * Math.PI * 2
     light.position.set(Math.cos(angle) * 11.5, 5.2, Math.sin(angle) * 11.5)
     light.target.position.set(0, 0.4, 0)
@@ -772,6 +775,28 @@ let musicStarted = false
 let musicMuted = false
 let childrenAmbienceGain = null
 let childrenAmbienceSource = null
+let alarmSirenGain = null
+let alarmSirenLow = null
+let alarmSirenHigh = null
+
+const ensureAlarmSiren = () => {
+    if (!audioContext || alarmSirenGain) return
+    alarmSirenGain = audioContext.createGain()
+    alarmSirenGain.gain.setValueAtTime(0.0001, audioContext.currentTime)
+    alarmSirenLow = audioContext.createOscillator()
+    alarmSirenHigh = audioContext.createOscillator()
+    alarmSirenLow.type = 'sawtooth'
+    alarmSirenHigh.type = 'triangle'
+    const lowGain = audioContext.createGain()
+    const highGain = audioContext.createGain()
+    lowGain.gain.value = 0.62
+    highGain.gain.value = 0.28
+    alarmSirenLow.connect(lowGain).connect(alarmSirenGain)
+    alarmSirenHigh.connect(highGain).connect(alarmSirenGain)
+    alarmSirenGain.connect(audioContext.destination)
+    alarmSirenLow.start()
+    alarmSirenHigh.start()
+}
 
 // Mixkit SFX 427 — "Laughing children indoors", Mixkit License.
 // Plik jest lokalnie przefiltrowany, aby ograniczyć piski i szum tła.
@@ -798,6 +823,7 @@ const startAmbientMusic = () => {
     if (musicStarted) {
         audioContext?.resume()
         startChildrenAmbience()
+        ensureAlarmSiren()
         return
     }
     musicStarted = true
@@ -807,6 +833,7 @@ const startAmbientMusic = () => {
     ambientGain.gain.exponentialRampToValueAtTime(0.075, audioContext.currentTime + 1.2)
     ambientGain.connect(audioContext.destination)
     startChildrenAmbience()
+    ensureAlarmSiren()
 
     // Original, jaunty 2/4 workshop-cartoon motif at 104 BPM. The melody uses
     // playful pauses and small rhythmic stumbles without quoting any theme.
@@ -1167,15 +1194,31 @@ const updateLightingEffects = (deltaTime, elapsedTime) => {
         light.intensity = lightingMode === 'alarm' ? alternatingFlash : 0
     })
 
+    if (audioContext) {
+        ensureAlarmSiren()
+        if (alarmSirenGain) {
+            const sirenActive = lightingMode === 'alarm'
+            const sirenWave = Math.sin(elapsedTime * Math.PI * 1.45) * 0.5 + 0.5
+            alarmSirenLow.frequency.setTargetAtTime(480 + sirenWave * 430, audioContext.currentTime, 0.035)
+            alarmSirenHigh.frequency.setTargetAtTime(710 + sirenWave * 610, audioContext.currentTime, 0.035)
+            alarmSirenGain.gain.setTargetAtTime(sirenActive ? 0.042 : 0.0001, audioContext.currentTime, 0.09)
+        }
+    }
+
     discoLights.forEach((entry, index) => {
         const active = lightingMode === 'disco'
-        entry.light.intensity = active ? 42 + Math.sin(elapsedTime * 2.1 + entry.phase) * 12 : 0
+        const individualPulse = 0.58 + Math.pow(
+            Math.max(0, Math.sin(elapsedTime * 6.4 + entry.phase * 1.7)),
+            4
+        ) * 0.42
+        const softStrobe = 0.68 + Math.pow(Math.max(0, Math.sin(elapsedTime * 19.5)), 8) * 0.32
+        entry.light.intensity = active ? 78 * individualPulse * softStrobe : 0
         if (active) {
-            const sweep = elapsedTime * (0.48 + index * 0.035) + entry.phase
+            const sweep = elapsedTime * (0.92 + index * 0.045) + entry.phase
             entry.light.target.position.set(
-                Math.sin(sweep * 1.17) * 12,
-                0.45 + (Math.sin(sweep * 1.9) * 0.5 + 0.5) * 2.4,
-                Math.cos(sweep * 0.91) * 12
+                Math.sin(sweep * 1.31) * 13,
+                0.35 + (Math.sin(sweep * 2.2) * 0.5 + 0.5) * 3.1,
+                Math.cos(sweep * 1.07) * 13
             )
         }
     })
