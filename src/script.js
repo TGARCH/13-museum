@@ -1,6 +1,7 @@
 import './style.css'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { CSS3DObject, CSS3DRenderer } from 'three/examples/jsm/renderers/CSS3DRenderer.js'
 
 /**
  * Debug----------------------------------------------------------------------------------------------------
@@ -14,6 +15,71 @@ const canvas = document.querySelector('canvas.webgl')
 
 // Scene
 const scene = new THREE.Scene()
+
+// Pionowe ekrany YouTube Shorts w narożniku zaznaczonym na podglądzie.
+const videoScreens = []
+const screenFrameMaterial = new THREE.MeshStandardMaterial({
+    color: 0x090b0b,
+    roughness: 0.32,
+    metalness: 0.48
+})
+
+function createYouTubeScreen(videoId, position, rotationY) {
+    const frame = new THREE.Mesh(
+        new THREE.BoxGeometry(1.22, 2.12, 0.08),
+        screenFrameMaterial
+    )
+    frame.position.copy(position)
+    frame.rotation.y = rotationY
+    frame.castShadow = true
+    scene.add(frame)
+
+    const element = document.createElement('div')
+    element.className = 'youtube-screen'
+    element.innerHTML = `
+        <iframe
+            title="Film Rysunek z Fabryczką"
+            data-src="https://www.youtube-nocookie.com/embed/${videoId}?rel=0&playsinline=1&modestbranding=1"
+            loading="lazy"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowfullscreen
+        ></iframe>
+        <div class="youtube-screen__hint">Esc — zwolnij kursor i uruchom film</div>
+    `
+
+    const screen = new CSS3DObject(element)
+    screen.position.copy(position)
+    screen.rotation.y = rotationY
+    screen.scale.setScalar(0.003)
+
+    // Przesunięcie powierzchni odtwarzacza przed czarną ramę.
+    const normal = new THREE.Vector3(0, 0, 1).applyAxisAngle(
+        new THREE.Vector3(0, 1, 0),
+        rotationY
+    )
+    screen.position.addScaledVector(normal, 0.045)
+    scene.add(screen)
+
+    videoScreens.push({
+        object: screen,
+        frame,
+        iframe: element.querySelector('iframe'),
+        normal,
+        loaded: false
+    })
+}
+
+// Dwa ekrany na prostopadłych ścianach przy zewnętrznym narożniku.
+createYouTubeScreen(
+    'sTjfavBiKaw',
+    new THREE.Vector3(11.9, 1.65, -13.92),
+    0
+)
+createYouTubeScreen(
+    'w8Gev2XEjEw',
+    new THREE.Vector3(13.92, 1.65, -11.9),
+    -Math.PI * 0.5
+)
 
 
 /**
@@ -367,6 +433,7 @@ window.addEventListener('resize', () =>
     // Update renderer
     renderer.setSize(sizes.width, sizes.height)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    cssRenderer.setSize(sizes.width, sizes.height)
 })
 
 /**
@@ -611,6 +678,28 @@ const renderer = new THREE.WebGLRenderer({
 })
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
+
+const cssRenderer = new CSS3DRenderer()
+cssRenderer.setSize(sizes.width, sizes.height)
+cssRenderer.domElement.className = 'css3d-layer'
+document.body.appendChild(cssRenderer.domElement)
+
+const updateVideoScreens = () => {
+    for (const screen of videoScreens) {
+        const toCamera = new THREE.Vector3()
+            .subVectors(camera.position, screen.object.position)
+        const distance = toCamera.length()
+        const facingCamera = screen.normal.dot(toCamera.normalize()) > 0.08
+        const visible = distance < 10 && facingCamera
+        screen.object.visible = visible
+
+        // YouTube ładuje się dopiero, gdy zwiedzający zbliży się do ekranu.
+        if (visible && !screen.loaded) {
+            screen.iframe.src = screen.iframe.dataset.src
+            screen.loaded = true
+        }
+    }
+}
 renderer.setSize(sizes.width, sizes.height)
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
 
@@ -637,9 +726,11 @@ const tick = () =>
     updateWalkControls(deltaTime)
     updateDust(deltaTime, elapsedTime)
     updateSpecter(elapsedTime)
+    updateVideoScreens()
 
     // Render
     renderer.render(scene, camera)
+    cssRenderer.render(scene, camera)
 
     // Call tick again on the next frame
     window.requestAnimationFrame(tick)
