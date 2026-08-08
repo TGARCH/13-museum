@@ -40,7 +40,7 @@ const screenGlowMaterial = new THREE.MeshBasicMaterial({
 
 function createYouTubeScreen(videoId, position, rotationY) {
     const frame = new THREE.Mesh(
-        new THREE.BoxGeometry(1.62, 2.82, 0.055),
+        new THREE.BoxGeometry(2.43, 4.23, 0.07),
         screenFrameMaterial
     )
     frame.position.copy(position)
@@ -48,7 +48,7 @@ function createYouTubeScreen(videoId, position, rotationY) {
     frame.castShadow = true
     scene.add(frame)
 
-    const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.92, 3.12), screenGlowMaterial.clone())
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(2.88, 4.68), screenGlowMaterial.clone())
     glow.position.copy(position)
     glow.rotation.y = rotationY
 
@@ -68,7 +68,7 @@ function createYouTubeScreen(videoId, position, rotationY) {
     const screen = new CSS3DObject(element)
     screen.position.copy(position)
     screen.rotation.y = rotationY
-    screen.scale.setScalar(0.0035)
+    screen.scale.setScalar(0.00525)
 
     // Przesunięcie powierzchni odtwarzacza przed czarną ramę.
     const normal = new THREE.Vector3(0, 0, 1).applyAxisAngle(
@@ -92,26 +92,26 @@ function createYouTubeScreen(videoId, position, rotationY) {
     })
 }
 
-// Cztery lewitujące ekrany: po dwa na każdej z prostopadłych ścian.
+// Cztery lewitujące ekrany: po jednym w każdym narożniku muzeum.
 createYouTubeScreen(
     'sTjfavBiKaw',
-    new THREE.Vector3(10.55, 1.78, -13.48),
+    new THREE.Vector3(-12.15, 2.35, -13.35),
     0
 )
 createYouTubeScreen(
     'w8Gev2XEjEw',
-    new THREE.Vector3(13.48, 1.78, -10.55),
-    -Math.PI * 0.5
-)
-createYouTubeScreen(
-    'U51P0KtXeDA',
-    new THREE.Vector3(12.35, 1.78, -13.48),
+    new THREE.Vector3(12.15, 2.35, -13.35),
     0
 )
 createYouTubeScreen(
+    'U51P0KtXeDA',
+    new THREE.Vector3(-12.15, 2.35, 13.35),
+    Math.PI
+)
+createYouTubeScreen(
     '8cuxCmHW_4A',
-    new THREE.Vector3(13.48, 1.78, -12.35),
-    -Math.PI * 0.5
+    new THREE.Vector3(12.15, 2.35, 13.35),
+    Math.PI
 )
 
 
@@ -594,6 +594,7 @@ canvas.addEventListener('click', () => {
 
 document.addEventListener('pointerlockchange', () => {
     const active = document.pointerLockElement === canvas
+    cssRenderer.domElement.classList.toggle('interactive', !active)
     startPanel.classList.toggle('hidden', active)
     startPanel.classList.toggle('paused', !active && hasEnteredMuseum)
     startButton.textContent = hasEnteredMuseum ? 'Wróć do zwiedzania' : 'Wejdź do muzeum'
