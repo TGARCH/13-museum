@@ -324,6 +324,7 @@ specterGroup.add(specterLight)
 const specterTag = document.querySelector('.fabryczka-tag')
 const specterTagWorld = new THREE.Vector3()
 let specterTagFocused = false
+let specterTagVisibleUntil = 0
 
 
 /**
@@ -604,6 +605,7 @@ document.addEventListener('pointerlockchange', () => {
         specterTag.hidden = true
         specterTag.classList.remove('is-near', 'is-gazed')
         specterTagFocused = false
+        specterTagVisibleUntil = 0
     }
     if (!active) pressedKeys.clear()
 })
@@ -707,7 +709,9 @@ const updateSpecter = (elapsedTime) => {
     const walking = document.pointerLockElement === canvas
     const closeEnough = camera.position.distanceTo(specterGroup.position) < 4.25
     const inFront = specterTagWorld.z > -1 && specterTagWorld.z < 1
-    const visible = walking && closeEnough && inFront
+    const onScreen = Math.abs(specterTagWorld.x) < 1.05 && Math.abs(specterTagWorld.y) < 1.05
+    if (walking && closeEnough && inFront && onScreen) specterTagVisibleUntil = elapsedTime + 2.5
+    const visible = walking && inFront && onScreen && (closeEnough || elapsedTime < specterTagVisibleUntil)
     specterTagFocused = visible && Math.abs(specterTagWorld.x) < 0.2 && Math.abs(specterTagWorld.y) < 0.2
     specterTag.classList.toggle('is-near', visible)
     specterTag.classList.toggle('is-gazed', specterTagFocused)
