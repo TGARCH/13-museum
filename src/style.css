@@ -205,6 +205,8 @@ body {
     box-shadow: 0 0 34px rgba(80, 225, 255, 0.34), 0 15px 42px rgba(0, 0, 0, 0.42);
 }
 
+.fabryczka-tag[hidden] { display: none; }
+
 .fabryczka-tag::after {
     content: '';
     position: absolute;
