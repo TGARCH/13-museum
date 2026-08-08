@@ -12,6 +12,7 @@ import { CSS3DObject, CSS3DRenderer } from 'three/examples/jsm/renderers/CSS3DRe
  */
 // Canvas
 const canvas = document.querySelector('canvas.webgl')
+const isTouchDevice = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0
 
 // Scene
 const scene = new THREE.Scene()
@@ -158,7 +159,7 @@ gltfLoader.load('/models/model3d24_gltf/model3d24_light.gltf', (gltf) => {
 
 // Subtle dust suspended in the gallery air. All particles share one geometry
 // and one material, so the atmosphere costs a single draw call.
-const dustCount = 480
+const dustCount = isTouchDevice ? 260 : 480
 const dustPositions = new Float32Array(dustCount * 3)
 const dustSpeeds = new Float32Array(dustCount)
 for (let i = 0; i < dustCount; i++) {
@@ -604,7 +605,7 @@ window.addEventListener('resize', () =>
 
     // Update renderer
     renderer.setSize(sizes.width, sizes.height)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouchDevice ? 1.35 : 2))
     cssRenderer.setSize(sizes.width, sizes.height)
 })
 
@@ -630,7 +631,21 @@ const right = new THREE.Vector3()
 const startPanel = document.querySelector('.start-panel')
 const startButton = document.querySelector('.start-button')
 const soundButton = document.querySelector('.sound-button')
+const mobileControls = document.querySelector('.mobile-controls')
+const joystick = document.querySelector('.mobile-joystick')
+const joystickKnob = document.querySelector('.mobile-joystick__knob')
+const mobileRunButton = document.querySelector('.mobile-run-button')
+const mobileInteractButton = document.querySelector('.mobile-interact-button')
+const mobilePauseButton = document.querySelector('.mobile-pause-button')
 let hasEnteredMuseum = false
+let mobileControlsActive = false
+let mobileForwardInput = 0
+let mobileSideInput = 0
+let mobileRunning = false
+let joystickPointerId = null
+let lookPointerId = null
+let lastLookX = 0
+let lastLookY = 0
 
 let audioContext = null
 let ambientGain = null
@@ -717,18 +732,115 @@ const collidesAt = (x, z) => collisionWalls.some((wall) => {
     return dx * dx + dz * dz < visitorRadius * visitorRadius
 })
 
-const requestMuseumControls = () => canvas.requestPointerLock()
+const setMobileNavigation = (active) => {
+    mobileControlsActive = active
+    mobileControls.classList.toggle('active', active)
+    startPanel.classList.toggle('hidden', active)
+    startPanel.classList.toggle('paused', !active && hasEnteredMuseum)
+    startButton.textContent = hasEnteredMuseum ? 'Wróć do zwiedzania' : 'Wejdź do muzeum'
+    cssRenderer.domElement.classList.add('interactive')
+    if (!active) {
+        mobileForwardInput = 0
+        mobileSideInput = 0
+        joystickKnob.style.transform = 'translate(0, 0)'
+        specterTag.hidden = true
+        mobileInteractButton.hidden = true
+    }
+}
+
+const requestMuseumControls = () => {
+    if (isTouchDevice) setMobileNavigation(true)
+    else canvas.requestPointerLock()
+}
 startButton.addEventListener('click', () => {
     hasEnteredMuseum = true
     startAmbientMusic()
     requestMuseumControls()
 })
 canvas.addEventListener('click', () => {
+    if (isTouchDevice) return
     if (document.pointerLockElement === canvas && specterTagFocused) {
         window.open('https://rysunekzfabryczka.pl/#e-booki', '_blank', 'noopener,noreferrer')
         return
     }
     if (document.pointerLockElement !== canvas) requestMuseumControls()
+})
+
+const updateJoystick = (clientX, clientY) => {
+    const bounds = joystick.getBoundingClientRect()
+    const centerX = bounds.left + bounds.width * 0.5
+    const centerY = bounds.top + bounds.height * 0.5
+    const maxDistance = bounds.width * 0.34
+    let dx = clientX - centerX
+    let dy = clientY - centerY
+    const distance = Math.hypot(dx, dy)
+    if (distance > maxDistance) {
+        dx = dx / distance * maxDistance
+        dy = dy / distance * maxDistance
+    }
+    joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`
+    mobileSideInput = dx / maxDistance
+    mobileForwardInput = -dy / maxDistance
+}
+
+joystick.addEventListener('pointerdown', (event) => {
+    if (!mobileControlsActive) return
+    joystickPointerId = event.pointerId
+    joystick.setPointerCapture(event.pointerId)
+    updateJoystick(event.clientX, event.clientY)
+})
+joystick.addEventListener('pointermove', (event) => {
+    if (event.pointerId === joystickPointerId) updateJoystick(event.clientX, event.clientY)
+})
+const releaseJoystick = (event) => {
+    if (event.pointerId !== joystickPointerId) return
+    joystickPointerId = null
+    mobileForwardInput = 0
+    mobileSideInput = 0
+    joystickKnob.style.transform = 'translate(0, 0)'
+}
+joystick.addEventListener('pointerup', releaseJoystick)
+joystick.addEventListener('pointercancel', releaseJoystick)
+
+canvas.addEventListener('pointerdown', (event) => {
+    if (!isTouchDevice || !mobileControlsActive || lookPointerId !== null) return
+    lookPointerId = event.pointerId
+    lastLookX = event.clientX
+    lastLookY = event.clientY
+    canvas.setPointerCapture(event.pointerId)
+})
+canvas.addEventListener('pointermove', (event) => {
+    if (event.pointerId !== lookPointerId) return
+    yaw -= (event.clientX - lastLookX) * 0.0052
+    pitch -= (event.clientY - lastLookY) * 0.0044
+    pitch = THREE.MathUtils.clamp(pitch, -Math.PI * 0.47, Math.PI * 0.47)
+    lastLookX = event.clientX
+    lastLookY = event.clientY
+})
+const releaseLook = (event) => {
+    if (event.pointerId === lookPointerId) lookPointerId = null
+}
+canvas.addEventListener('pointerup', releaseLook)
+canvas.addEventListener('pointercancel', releaseLook)
+
+mobileRunButton.addEventListener('pointerdown', (event) => {
+    event.stopPropagation()
+    mobileRunning = true
+    mobileRunButton.classList.add('pressed')
+})
+const stopMobileRunning = () => {
+    mobileRunning = false
+    mobileRunButton.classList.remove('pressed')
+}
+mobileRunButton.addEventListener('pointerup', stopMobileRunning)
+mobileRunButton.addEventListener('pointercancel', stopMobileRunning)
+mobilePauseButton.addEventListener('click', (event) => {
+    event.stopPropagation()
+    setMobileNavigation(false)
+})
+mobileInteractButton.addEventListener('click', (event) => {
+    event.stopPropagation()
+    window.open('https://rysunekzfabryczka.pl/#e-booki', '_blank', 'noopener,noreferrer')
 })
 
 document.addEventListener('pointerlockchange', () => {
@@ -764,18 +876,19 @@ window.addEventListener('blur', () => pressedKeys.clear())
 
 const updateWalkControls = (deltaTime) => {
     camera.rotation.set(pitch, yaw, 0, 'YXZ')
-    if (document.pointerLockElement !== canvas) return
+    const navigationActive = isTouchDevice ? mobileControlsActive : document.pointerLockElement === canvas
+    if (!navigationActive) return
 
-    const forwardInput = Number(pressedKeys.has('KeyW') || pressedKeys.has('ArrowUp'))
+    const forwardInput = isTouchDevice ? mobileForwardInput : Number(pressedKeys.has('KeyW') || pressedKeys.has('ArrowUp'))
         - Number(pressedKeys.has('KeyS') || pressedKeys.has('ArrowDown'))
-    const sideInput = Number(pressedKeys.has('KeyD') || pressedKeys.has('ArrowRight'))
+    const sideInput = isTouchDevice ? mobileSideInput : Number(pressedKeys.has('KeyD') || pressedKeys.has('ArrowRight'))
         - Number(pressedKeys.has('KeyA') || pressedKeys.has('ArrowLeft'))
     if (!forwardInput && !sideInput) return
 
     forward.set(-Math.sin(yaw), 0, -Math.cos(yaw))
     right.set(Math.cos(yaw), 0, -Math.sin(yaw))
     movement.copy(forward).multiplyScalar(forwardInput).addScaledVector(right, sideInput).normalize()
-    const movingFast = pressedKeys.has('ShiftLeft') || pressedKeys.has('ShiftRight')
+    const movingFast = isTouchDevice ? mobileRunning : pressedKeys.has('ShiftLeft') || pressedKeys.has('ShiftRight')
     const currentWalkSpeed = movingFast ? fastWalkSpeed : walkSpeed
     movement.multiplyScalar(currentWalkSpeed * Math.min(deltaTime, 0.05))
 
@@ -842,7 +955,7 @@ const updateSpecter = (elapsedTime) => {
     specterGroup.getWorldPosition(specterTagWorld)
     specterTagWorld.y += 1.05
     specterTagWorld.project(camera)
-    const walking = document.pointerLockElement === canvas
+    const walking = isTouchDevice ? mobileControlsActive : document.pointerLockElement === canvas
     const closeEnough = camera.position.distanceTo(specterGroup.position) < 4.25
     const inFront = specterTagWorld.z > -1 && specterTagWorld.z < 1
     const onScreen = Math.abs(specterTagWorld.x) < 1.05 && Math.abs(specterTagWorld.y) < 1.05
@@ -852,6 +965,7 @@ const updateSpecter = (elapsedTime) => {
     specterTag.classList.toggle('is-near', visible)
     specterTag.classList.toggle('is-gazed', specterTagFocused)
     specterTag.hidden = !visible
+    if (isTouchDevice) mobileInteractButton.hidden = !visible
     if (visible) {
         specterTag.style.left = `${(specterTagWorld.x * 0.5 + 0.5) * sizes.width}px`
         specterTag.style.top = `${(-specterTagWorld.y * 0.5 + 0.5) * sizes.height}px`
@@ -871,6 +985,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap
 const cssRenderer = new CSS3DRenderer()
 cssRenderer.setSize(sizes.width, sizes.height)
 cssRenderer.domElement.className = 'css3d-layer'
+if (isTouchDevice) cssRenderer.domElement.classList.add('interactive')
 document.body.appendChild(cssRenderer.domElement)
 
 const updateVideoScreens = (elapsedTime) => {
@@ -912,7 +1027,7 @@ const updateVideoScreens = (elapsedTime) => {
     }
 }
 renderer.setSize(sizes.width, sizes.height)
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouchDevice ? 1.35 : 2))
 
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
