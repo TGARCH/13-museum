@@ -3,6 +3,9 @@ import { inject } from '@vercel/analytics'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { CSS3DObject, CSS3DRenderer } from 'three/examples/jsm/renderers/CSS3DRenderer.js'
+import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js'
+import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js'
+import sourceSansFontData from './fonts/source-sans-pro-semibold.typeface.json'
 
 inject()
 
@@ -529,79 +532,86 @@ blockTrigger.add(blockTriggerEdges)
 
 const fallingBlocks = []
 
-// Trzywierszowe ogłoszenie stojące na podłodze jak niski, przesuwny box.
+// Prawdziwe, przestrzenne litery połączone wspólnym niewidocznym korpusem kolizyjnym.
 const announcementWidth = 5.6
 const announcementHeight = 1.2
-const announcementDepth = 0.32
-const announcementCanvas = document.createElement('canvas')
-announcementCanvas.width = 2048
-announcementCanvas.height = 512
-const announcementContext = announcementCanvas.getContext('2d')
-const announcementGradient = announcementContext.createLinearGradient(0, 0, announcementCanvas.width, announcementCanvas.height)
-announcementGradient.addColorStop(0, '#07131d')
-announcementGradient.addColorStop(0.52, '#102b3a')
-announcementGradient.addColorStop(1, '#081821')
-announcementContext.fillStyle = announcementGradient
-announcementContext.fillRect(0, 0, announcementCanvas.width, announcementCanvas.height)
-announcementContext.strokeStyle = '#d9aa55'
-announcementContext.lineWidth = 12
-announcementContext.strokeRect(28, 28, announcementCanvas.width - 56, announcementCanvas.height - 56)
-announcementContext.textAlign = 'center'
-announcementContext.textBaseline = 'middle'
-announcementContext.shadowColor = 'rgba(47, 220, 255, 0.38)'
-announcementContext.shadowBlur = 18
-announcementContext.fillStyle = '#f5ca76'
-announcementContext.font = '600 70px Arial, sans-serif'
-announcementContext.fillText('J  U  Ż     O D     W  R  Z  E  Ś  N  I  A', 1024, 126)
-announcementContext.shadowBlur = 10
-announcementContext.fillStyle = '#ffffff'
-announcementContext.font = '600 66px Arial, sans-serif'
-announcementContext.fillText('Zajęcia rysunkowe w Mikołowie', 1024, 262)
-announcementContext.fillStyle = '#c9eef2'
-announcementContext.font = '500 57px Arial, sans-serif'
-announcementContext.fillText('wtorek, czwartek, piątek o 16.30', 1024, 378)
-
-const announcementTexture = new THREE.CanvasTexture(announcementCanvas)
-announcementTexture.colorSpace = THREE.SRGBColorSpace
-announcementTexture.anisotropy = 8
-
+const announcementDepth = 0.34
+const announcementFont = new FontLoader().parse(sourceSansFontData)
 const movableAnnouncement = new THREE.Group()
-const announcementBody = new THREE.Mesh(
+const announcementCollider = new THREE.Mesh(
     new THREE.BoxGeometry(announcementWidth, announcementHeight, announcementDepth),
-    new THREE.MeshStandardMaterial({
-        color: 0x10232d,
-        roughness: 0.32,
-        metalness: 0.52,
-        emissive: 0x123a46,
-        emissiveIntensity: 0.22
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+)
+announcementCollider.userData.isAnnouncementCollider = true
+movableAnnouncement.add(announcementCollider)
+
+const announcementLines = [
+    {
+        text: 'J  U  Ż     O D     W  R  Z  E  Ś  N  I  A',
+        y: 0.39,
+        size: 0.31,
+        color: 0xf2b84b,
+        emissive: 0x5f3700
+    },
+    {
+        text: 'Zajęcia rysunkowe w Mikołowie',
+        y: 0,
+        size: 0.31,
+        color: 0xffffff,
+        emissive: 0x1c3941
+    },
+    {
+        text: 'wtorek, czwartek, piątek o 16.30',
+        y: -0.39,
+        size: 0.27,
+        color: 0xaeeeff,
+        emissive: 0x063847
+    }
+]
+
+const createAnnouncementLine = ({ text, y, size, color, emissive }) => {
+    const geometry = new TextGeometry(text, {
+        font: announcementFont,
+        size,
+        depth: 0.09,
+        curveSegments: 7,
+        bevelEnabled: true,
+        bevelThickness: 0.018,
+        bevelSize: 0.012,
+        bevelOffset: 0,
+        bevelSegments: 3
     })
-)
-announcementBody.castShadow = true
-announcementBody.receiveShadow = true
-movableAnnouncement.add(announcementBody)
+    geometry.computeBoundingBox()
+    const bounds = geometry.boundingBox
+    const width = bounds.max.x - bounds.min.x
+    const height = bounds.max.y - bounds.min.y
+    geometry.translate(-(bounds.min.x + width * 0.5), -(bounds.min.y + height * 0.5), -0.045)
 
-const announcementFaceGeometry = new THREE.PlaneGeometry(announcementWidth - 0.14, announcementHeight - 0.14)
-const announcementFaceMaterial = new THREE.MeshStandardMaterial({
-    map: announcementTexture,
-    roughness: 0.48,
-    metalness: 0.05,
-    emissive: 0x0b2029,
-    emissiveIntensity: 0.16,
-    side: THREE.DoubleSide
-})
-const announcementFront = new THREE.Mesh(announcementFaceGeometry, announcementFaceMaterial)
-announcementFront.position.z = announcementDepth * 0.5 + 0.003
-movableAnnouncement.add(announcementFront)
-const announcementBack = announcementFront.clone()
-announcementBack.position.z = -announcementDepth * 0.5 - 0.003
-announcementBack.rotation.y = Math.PI
-movableAnnouncement.add(announcementBack)
+    const material = new THREE.MeshStandardMaterial({
+        color,
+        emissive,
+        emissiveIntensity: 0.34,
+        roughness: 0.28,
+        metalness: 0.38
+    })
+    const line = new THREE.Group()
+    const front = new THREE.Mesh(geometry, material)
+    front.castShadow = true
+    front.receiveShadow = true
+    line.add(front)
+    const back = new THREE.Mesh(geometry, material)
+    back.rotation.y = Math.PI
+    back.castShadow = true
+    back.receiveShadow = true
+    line.add(back)
 
-const announcementEdges = new THREE.LineSegments(
-    new THREE.EdgesGeometry(announcementBody.geometry),
-    new THREE.LineBasicMaterial({ color: 0xf3c56e, transparent: true, opacity: 0.82 })
-)
-movableAnnouncement.add(announcementEdges)
+    const maxLineWidth = announcementWidth - 0.16
+    if (width > maxLineWidth) line.scale.x = maxLineWidth / width
+    line.position.set(0, y, 0)
+    movableAnnouncement.add(line)
+}
+
+announcementLines.forEach(createAnnouncementLine)
 movableAnnouncement.position.set(1.15, announcementHeight * 0.5, 0.8)
 movableAnnouncement.rotation.y = -0.16
 scene.add(movableAnnouncement)
