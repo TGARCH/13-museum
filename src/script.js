@@ -535,7 +535,7 @@ const fallingBlocks = []
 // Prawdziwe, przestrzenne litery połączone wspólnym niewidocznym korpusem kolizyjnym.
 const announcementWidth = 5.6
 const announcementHeight = 1.2
-const announcementDepth = 0.34
+const announcementDepth = 0.05
 const announcementFont = new FontLoader().parse(sourceSansFontData)
 const movableAnnouncement = new THREE.Group()
 const announcementCollider = new THREE.Mesh(
@@ -556,28 +556,24 @@ const announcementLines = [
     {
         text: 'Zajęcia rysunkowe w Mikołowie',
         y: 0,
-        size: 0.31,
-        color: 0xffffff,
-        emissive: 0x1c3941
+        size: 0.31
     },
     {
         text: 'wtorek, czwartek, piątek o 16.30',
         y: -0.39,
-        size: 0.27,
-        color: 0xaeeeff,
-        emissive: 0x063847
+        size: 0.27
     }
 ]
 
-const createAnnouncementLine = ({ text, y, size, color, emissive }) => {
+const createAnnouncementLine = ({ text, y, size }) => {
     const geometry = new TextGeometry(text, {
         font: announcementFont,
         size,
-        depth: 0.09,
+        depth: 0.04,
         curveSegments: 7,
         bevelEnabled: true,
-        bevelThickness: 0.018,
-        bevelSize: 0.012,
+        bevelThickness: 0.005,
+        bevelSize: 0.004,
         bevelOffset: 0,
         bevelSegments: 3
     })
@@ -585,26 +581,18 @@ const createAnnouncementLine = ({ text, y, size, color, emissive }) => {
     const bounds = geometry.boundingBox
     const width = bounds.max.x - bounds.min.x
     const height = bounds.max.y - bounds.min.y
-    geometry.translate(-(bounds.min.x + width * 0.5), -(bounds.min.y + height * 0.5), -0.045)
+    geometry.translate(-(bounds.min.x + width * 0.5), -(bounds.min.y + height * 0.5), -0.025)
 
     const material = new THREE.MeshStandardMaterial({
-        color,
-        emissive,
-        emissiveIntensity: 0.34,
-        roughness: 0.28,
-        metalness: 0.38
+        color: 0x050505,
+        roughness: 0.3,
+        metalness: 0.18
     })
     const line = new THREE.Group()
     const front = new THREE.Mesh(geometry, material)
     front.castShadow = true
     front.receiveShadow = true
     line.add(front)
-    const back = new THREE.Mesh(geometry, material)
-    back.rotation.y = Math.PI
-    back.castShadow = true
-    back.receiveShadow = true
-    line.add(back)
-
     const maxLineWidth = announcementWidth - 0.16
     if (width > maxLineWidth) line.scale.x = maxLineWidth / width
     line.position.set(0, y, 0)
