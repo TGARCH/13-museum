@@ -533,8 +533,8 @@ blockTrigger.add(blockTriggerEdges)
 const fallingBlocks = []
 
 // Trzy niezależne, jednostronne zestawy liter 3D ustawione obok siebie.
-const announcementWidth = 3.55
-const announcementHeight = 1.2
+const announcementWidth = 2.65
+const announcementHeight = 0.9
 const announcementDepth = 0.05
 const announcementFont = new FontLoader().parse(sourceSansFontData)
 const movableAnnouncements = []
@@ -575,7 +575,7 @@ const createAnnouncementLine = (announcement, { text, y, size }) => {
     announcement.group.add(line)
 }
 
-const createMovableAnnouncement = (day, x, z, rotation) => {
+const createMovableAnnouncement = (lines, x, z, rotation) => {
     const group = new THREE.Group()
     const collider = new THREE.Mesh(
         new THREE.BoxGeometry(announcementWidth, announcementHeight, announcementDepth),
@@ -589,11 +589,6 @@ const createMovableAnnouncement = (day, x, z, rotation) => {
         halfWidth: announcementWidth * 0.5,
         halfDepth: announcementDepth * 0.5
     }
-    const lines = [
-        { text: 'JUŻ OD WRZEŚNIA', y: 0.39, size: 0.34 },
-        { text: 'Zajęcia rysunkowe w Mikołowie', y: 0, size: 0.29 },
-        { text: `${day} 16.30`, y: -0.39, size: 0.32 }
-    ]
     lines.forEach((line) => createAnnouncementLine(announcement, line))
     group.position.set(x, announcementHeight * 0.5, z)
     group.rotation.y = rotation
@@ -601,9 +596,23 @@ const createMovableAnnouncement = (day, x, z, rotation) => {
     movableAnnouncements.push(announcement)
 }
 
-createMovableAnnouncement('wtorek', -4, 0.75, -0.12)
-createMovableAnnouncement('czwartek', 0, 0.75, 0.03)
-createMovableAnnouncement('piątek', 4, 0.75, 0.14)
+createMovableAnnouncement([
+    { text: 'JUŻ', y: 0.29, size: 0.31 },
+    { text: 'OD', y: 0, size: 0.31 },
+    { text: 'WRZEŚNIA', y: -0.29, size: 0.28 }
+], -3, 0.68, -0.16)
+
+createMovableAnnouncement([
+    { text: 'Zajęcia', y: 0.29, size: 0.29 },
+    { text: 'rysunkowe w', y: 0, size: 0.27 },
+    { text: 'Mikołowie', y: -0.29, size: 0.28 }
+], 0, 0.92, 0.04)
+
+createMovableAnnouncement([
+    { text: 'wtorek 16.30', y: 0.29, size: 0.25 },
+    { text: 'czwartek 16.30', y: 0, size: 0.24 },
+    { text: 'piątek 16.30', y: -0.29, size: 0.25 }
+], 3, 0.58, 0.17)
 
 const getAnnouncementNearestPoint = (announcement, x, z) => {
     const cosine = Math.cos(announcement.group.rotation.y)
