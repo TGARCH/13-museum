@@ -532,40 +532,16 @@ blockTrigger.add(blockTriggerEdges)
 
 const fallingBlocks = []
 
-// Prawdziwe, przestrzenne litery połączone wspólnym niewidocznym korpusem kolizyjnym.
-const announcementWidth = 5.6
+// Trzy niezależne, jednostronne zestawy liter 3D ustawione obok siebie.
+const announcementWidth = 3.55
 const announcementHeight = 1.2
 const announcementDepth = 0.05
 const announcementFont = new FontLoader().parse(sourceSansFontData)
-const movableAnnouncement = new THREE.Group()
-const announcementCollider = new THREE.Mesh(
-    new THREE.BoxGeometry(announcementWidth, announcementHeight, announcementDepth),
-    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
-)
-announcementCollider.userData.isAnnouncementCollider = true
-movableAnnouncement.add(announcementCollider)
+const movableAnnouncements = []
+const announcementLocalPoint = new THREE.Vector2()
+const announcementWorldPoint = new THREE.Vector2()
 
-const announcementLines = [
-    {
-        text: 'J  U  Ż     O D     W  R  Z  E  Ś  N  I  A',
-        y: 0.39,
-        size: 0.31,
-        color: 0xf2b84b,
-        emissive: 0x5f3700
-    },
-    {
-        text: 'Zajęcia rysunkowe w Mikołowie',
-        y: 0,
-        size: 0.31
-    },
-    {
-        text: 'wtorek, czwartek, piątek o 16.30',
-        y: -0.39,
-        size: 0.27
-    }
-]
-
-const createAnnouncementLine = ({ text, y, size }) => {
+const createAnnouncementLine = (announcement, { text, y, size }) => {
     const geometry = new TextGeometry(text, {
         font: announcementFont,
         size,
@@ -593,58 +569,88 @@ const createAnnouncementLine = ({ text, y, size }) => {
     front.castShadow = true
     front.receiveShadow = true
     line.add(front)
-    const maxLineWidth = announcementWidth - 0.16
+    const maxLineWidth = announcementWidth - 0.12
     if (width > maxLineWidth) line.scale.x = maxLineWidth / width
     line.position.set(0, y, 0)
-    movableAnnouncement.add(line)
+    announcement.group.add(line)
 }
 
-announcementLines.forEach(createAnnouncementLine)
-movableAnnouncement.position.set(1.15, announcementHeight * 0.5, 0.8)
-movableAnnouncement.rotation.y = -0.16
-scene.add(movableAnnouncement)
+const createMovableAnnouncement = (day, x, z, rotation) => {
+    const group = new THREE.Group()
+    const collider = new THREE.Mesh(
+        new THREE.BoxGeometry(announcementWidth, announcementHeight, announcementDepth),
+        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+    )
+    collider.userData.isAnnouncementCollider = true
+    group.add(collider)
 
-const announcementHalfWidth = announcementWidth * 0.5
-const announcementHalfDepth = announcementDepth * 0.5
-const announcementLocalPoint = new THREE.Vector2()
-const announcementWorldPoint = new THREE.Vector2()
+    const announcement = {
+        group,
+        halfWidth: announcementWidth * 0.5,
+        halfDepth: announcementDepth * 0.5
+    }
+    const lines = [
+        { text: 'JUŻ OD WRZEŚNIA', y: 0.39, size: 0.34 },
+        { text: 'Zajęcia rysunkowe w Mikołowie', y: 0, size: 0.29 },
+        { text: `${day} 16.30`, y: -0.39, size: 0.32 }
+    ]
+    lines.forEach((line) => createAnnouncementLine(announcement, line))
+    group.position.set(x, announcementHeight * 0.5, z)
+    group.rotation.y = rotation
+    scene.add(group)
+    movableAnnouncements.push(announcement)
+}
 
-const getAnnouncementNearestPoint = (x, z) => {
-    const cosine = Math.cos(movableAnnouncement.rotation.y)
-    const sine = Math.sin(movableAnnouncement.rotation.y)
-    const dx = x - movableAnnouncement.position.x
-    const dz = z - movableAnnouncement.position.z
+createMovableAnnouncement('wtorek', -4, 0.75, -0.12)
+createMovableAnnouncement('czwartek', 0, 0.75, 0.03)
+createMovableAnnouncement('piątek', 4, 0.75, 0.14)
+
+const getAnnouncementNearestPoint = (announcement, x, z) => {
+    const cosine = Math.cos(announcement.group.rotation.y)
+    const sine = Math.sin(announcement.group.rotation.y)
+    const dx = x - announcement.group.position.x
+    const dz = z - announcement.group.position.z
     const localX = dx * cosine - dz * sine
     const localZ = dx * sine + dz * cosine
     announcementLocalPoint.set(
-        THREE.MathUtils.clamp(localX, -announcementHalfWidth, announcementHalfWidth),
-        THREE.MathUtils.clamp(localZ, -announcementHalfDepth, announcementHalfDepth)
+        THREE.MathUtils.clamp(localX, -announcement.halfWidth, announcement.halfWidth),
+        THREE.MathUtils.clamp(localZ, -announcement.halfDepth, announcement.halfDepth)
     )
     announcementWorldPoint.set(
-        movableAnnouncement.position.x + announcementLocalPoint.x * cosine + announcementLocalPoint.y * sine,
-        movableAnnouncement.position.z - announcementLocalPoint.x * sine + announcementLocalPoint.y * cosine
+        announcement.group.position.x + announcementLocalPoint.x * cosine + announcementLocalPoint.y * sine,
+        announcement.group.position.z - announcementLocalPoint.x * sine + announcementLocalPoint.y * cosine
     )
     return announcementWorldPoint
 }
 
-const visitorCollidesWithAnnouncement = (x, z) => {
-    const nearest = getAnnouncementNearestPoint(x, z)
+const visitorCollidesWithOneAnnouncement = (announcement, x, z) => {
+    const nearest = getAnnouncementNearestPoint(announcement, x, z)
     return (x - nearest.x) ** 2 + (z - nearest.y) ** 2 < visitorRadius ** 2
 }
 
-const announcementFitsAt = (x, z) => {
-    const cosine = Math.cos(movableAnnouncement.rotation.y)
-    const sine = Math.sin(movableAnnouncement.rotation.y)
+const visitorCollidesWithAnnouncement = (x, z) =>
+    movableAnnouncements.some((announcement) => visitorCollidesWithOneAnnouncement(announcement, x, z))
+
+const announcementFitsAt = (announcement, x, z) => {
+    const cosine = Math.cos(announcement.group.rotation.y)
+    const sine = Math.sin(announcement.group.rotation.y)
     const inset = 0.04
-    return [
-        [-announcementHalfWidth, -announcementHalfDepth],
-        [announcementHalfWidth, -announcementHalfDepth],
-        [-announcementHalfWidth, announcementHalfDepth],
-        [announcementHalfWidth, announcementHalfDepth]
+    const clearsWalls = [
+        [-announcement.halfWidth, -announcement.halfDepth],
+        [announcement.halfWidth, -announcement.halfDepth],
+        [-announcement.halfWidth, announcement.halfDepth],
+        [announcement.halfWidth, announcement.halfDepth]
     ].every(([cornerX, cornerZ]) => {
         const worldX = x + cornerX * cosine + cornerZ * sine
         const worldZ = z - cornerX * sine + cornerZ * cosine
         return !collidesRadiusAt(worldX, worldZ, inset)
+    })
+    if (!clearsWalls) return false
+
+    return movableAnnouncements.every((other) => {
+        if (other === announcement) return true
+        const minimumDistance = announcement.halfWidth + other.halfWidth + 0.12
+        return Math.hypot(x - other.group.position.x, z - other.group.position.z) >= minimumDistance
     })
 }
 
@@ -1187,11 +1193,16 @@ const pushBlocksByVisitor = (visitorDelta) => {
     const pushDistance = visitorDelta.length()
     if (!pushDistance) return
 
-    if (visitorCollidesWithAnnouncement(camera.position.x, camera.position.z)) {
-        const nextX = movableAnnouncement.position.x + visitorDelta.x * 1.08
-        const nextZ = movableAnnouncement.position.z + visitorDelta.z * 1.08
-        if (announcementFitsAt(nextX, movableAnnouncement.position.z)) movableAnnouncement.position.x = nextX
-        if (announcementFitsAt(movableAnnouncement.position.x, nextZ)) movableAnnouncement.position.z = nextZ
+    for (const announcement of movableAnnouncements) {
+        if (!visitorCollidesWithOneAnnouncement(announcement, camera.position.x, camera.position.z)) continue
+        const nextX = announcement.group.position.x + visitorDelta.x * 1.08
+        const nextZ = announcement.group.position.z + visitorDelta.z * 1.08
+        if (announcementFitsAt(announcement, nextX, announcement.group.position.z)) {
+            announcement.group.position.x = nextX
+        }
+        if (announcementFitsAt(announcement, announcement.group.position.x, nextZ)) {
+            announcement.group.position.z = nextZ
+        }
     }
 
     if (!fallingBlocks.length) return
