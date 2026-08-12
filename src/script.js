@@ -1,7 +1,10 @@
 import './style.css'
+import { inject } from '@vercel/analytics'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { CSS3DObject, CSS3DRenderer } from 'three/examples/jsm/renderers/CSS3DRenderer.js'
+
+inject()
 
 /**
  * Debug----------------------------------------------------------------------------------------------------

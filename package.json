@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "cannon": "^0.6.2",
     "three": "^0.174.0"
   },
@@ -16,4 +17,3 @@
     "vite": "^6.2.2"
   }
 }
-
