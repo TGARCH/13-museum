@@ -613,7 +613,7 @@ let lightingMode = 'normal'
 /**
  * Ant colony
  */
-const antCount = isTouchDevice ? 650 : 1050
+const antCount = isTouchDevice ? 1500 : 2800
 const antPositions = new Float32Array(antCount * 3)
 const ants = []
 for (let index = 0; index < antCount; index++) {
@@ -626,7 +626,7 @@ for (let index = 0; index < antCount; index++) {
     antPositions[index * 3 + 2] = z
     ants.push({
         surface: 'floor', x, z, angle: angle + THREE.MathUtils.randFloatSpread(0.7),
-        speed: THREE.MathUtils.randFloat(0.19, 0.42), turnAt: Math.random() * 2,
+        speed: THREE.MathUtils.randFloat(0.075, 0.18), turnAt: Math.random() * 2,
         wall: null, u: 0, v: 0, du: 0, dv: 0
     })
 }
