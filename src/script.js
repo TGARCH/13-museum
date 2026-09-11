@@ -632,9 +632,21 @@ for (let index = 0; index < antCount; index++) {
 }
 const antGeometry = new THREE.BufferGeometry()
 antGeometry.setAttribute('position', new THREE.BufferAttribute(antPositions, 3))
+const antDotCanvas = document.createElement('canvas')
+antDotCanvas.width = antDotCanvas.height = 32
+const antDotContext = antDotCanvas.getContext('2d')
+const antDotGradient = antDotContext.createRadialGradient(16, 16, 2, 16, 16, 15)
+antDotGradient.addColorStop(0, 'rgba(255,255,255,1)')
+antDotGradient.addColorStop(0.72, 'rgba(255,255,255,1)')
+antDotGradient.addColorStop(1, 'rgba(255,255,255,0)')
+antDotContext.fillStyle = antDotGradient
+antDotContext.fillRect(0, 0, 32, 32)
+const antDotTexture = new THREE.CanvasTexture(antDotCanvas)
 const antMaterial = new THREE.PointsMaterial({
     color: 0x080604,
-    size: isTouchDevice ? 0.045 : 0.038,
+    map: antDotTexture,
+    alphaTest: 0.24,
+    size: isTouchDevice ? 0.036 : 0.03,
     sizeAttenuation: true,
     transparent: true,
     opacity: 0.94,
@@ -642,6 +654,9 @@ const antMaterial = new THREE.PointsMaterial({
 })
 const antColony = new THREE.Points(antGeometry, antMaterial)
 antColony.renderOrder = 6
+// Punkty stale zmieniają położenie, więc początkowa bryła ograniczająca przy
+// kafelku nie może decydować o ich znikaniu przy obracaniu kamery.
+antColony.frustumCulled = false
 antColony.visible = false
 scene.add(antColony)
 let antModeActive = false
