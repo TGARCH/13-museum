@@ -1840,26 +1840,63 @@ const updateBlockPhysics = (deltaTime, elapsedTime) => {
         }
     }
 
-    // Prosta separacja klocków na podłodze zapobiega ich przenikaniu.
+    // Separacja działa zarówno na podłodze, jak i na wodzie. Uwzględniamy
+    // wysokość, żeby spadające kostki nie odpychały tych daleko pod nimi.
     for (let first = 0; first < fallingBlocks.length; first++) {
         const a = fallingBlocks[first]
-        if (a.mesh.position.y > 0.62) continue
         for (let second = first + 1; second < fallingBlocks.length; second++) {
             const b = fallingBlocks[second]
-            if (b.mesh.position.y > 0.62) continue
+            if (Math.abs(a.mesh.position.y - b.mesh.position.y) >= 0.96) continue
             const dx = b.mesh.position.x - a.mesh.position.x
             const dz = b.mesh.position.z - a.mesh.position.z
-            const distance = Math.hypot(dx, dz)
-            if (distance >= 1.02 || distance < 0.001) continue
-            const overlap = (1.02 - distance) * 0.5
-            const nx = dx / distance
-            const nz = dz / distance
-            const ax = a.mesh.position.x - nx * overlap
-            const az = a.mesh.position.z - nz * overlap
-            const bx = b.mesh.position.x + nx * overlap
-            const bz = b.mesh.position.z + nz * overlap
-            if (!collidesRadiusAt(ax, az, 0.52)) a.mesh.position.set(ax, a.mesh.position.y, az)
-            if (!collidesRadiusAt(bx, bz, 0.52)) b.mesh.position.set(bx, b.mesh.position.y, bz)
+            let distance = Math.hypot(dx, dz)
+            if (distance >= 1.02) continue
+
+            // Przy idealnym nałożeniu wybierz stabilny kierunek rozdzielenia.
+            const fallbackAngle = (first * 2.399 + second * 1.317) % (Math.PI * 2)
+            const nx = distance > 0.001 ? dx / distance : Math.cos(fallbackAngle)
+            const nz = distance > 0.001 ? dz / distance : Math.sin(fallbackAngle)
+            distance = Math.max(distance, 0.001)
+            const overlap = 1.02 - distance
+            const halfCorrection = overlap * 0.5 + 0.001
+
+            const ax = a.mesh.position.x - nx * halfCorrection
+            const az = a.mesh.position.z - nz * halfCorrection
+            const bx = b.mesh.position.x + nx * halfCorrection
+            const bz = b.mesh.position.z + nz * halfCorrection
+            const canMoveA = !collidesRadiusAt(ax, az, 0.52)
+            const canMoveB = !collidesRadiusAt(bx, bz, 0.52)
+
+            if (canMoveA && canMoveB) {
+                a.mesh.position.x = ax
+                a.mesh.position.z = az
+                b.mesh.position.x = bx
+                b.mesh.position.z = bz
+            } else if (canMoveA) {
+                a.mesh.position.x = ax
+                a.mesh.position.z = az
+            } else if (canMoveB) {
+                b.mesh.position.x = bx
+                b.mesh.position.z = bz
+            }
+
+            // Wymiana pędu daje lekkie, tłumione odbicie zamiast sklejania się.
+            const relativeNormalVelocity = (b.velocity.x - a.velocity.x) * nx
+                + (b.velocity.z - a.velocity.z) * nz
+            if (relativeNormalVelocity < 0) {
+                const impulse = -relativeNormalVelocity * 0.62
+                a.velocity.x -= nx * impulse
+                a.velocity.z -= nz * impulse
+                b.velocity.x += nx * impulse
+                b.velocity.z += nz * impulse
+            }
+            const separationKick = Math.min(0.16, overlap * 0.7)
+            a.velocity.x -= nx * separationKick
+            a.velocity.z -= nz * separationKick
+            b.velocity.x += nx * separationKick
+            b.velocity.z += nz * separationKick
+            a.settled = false
+            b.settled = false
         }
     }
 }
