@@ -607,7 +607,151 @@ const createEffectPad = (x, z, color, emissive) => {
 
 const alarmPad = createEffectPad(-12.15, 7.7, 0x671c22, 0xff2638)
 const discoPad = createEffectPad(12.15, 7.7, 0x163c68, 0x35d9ff)
+const antPad = createEffectPad(0, 7.7, 0x241b12, 0xff9d35)
 let lightingMode = 'normal'
+
+/**
+ * Ant colony
+ */
+const antCount = isTouchDevice ? 650 : 1050
+const antPositions = new Float32Array(antCount * 3)
+const ants = []
+for (let index = 0; index < antCount; index++) {
+    const angle = Math.random() * Math.PI * 2
+    const radius = Math.sqrt(Math.random()) * 0.42
+    const x = antPad.position.x + Math.cos(angle) * radius
+    const z = antPad.position.z + Math.sin(angle) * radius
+    antPositions[index * 3] = x
+    antPositions[index * 3 + 1] = 0.045
+    antPositions[index * 3 + 2] = z
+    ants.push({
+        surface: 'floor', x, z, angle: angle + THREE.MathUtils.randFloatSpread(0.7),
+        speed: THREE.MathUtils.randFloat(0.19, 0.42), turnAt: Math.random() * 2,
+        wall: null, u: 0, v: 0, du: 0, dv: 0
+    })
+}
+const antGeometry = new THREE.BufferGeometry()
+antGeometry.setAttribute('position', new THREE.BufferAttribute(antPositions, 3))
+const antMaterial = new THREE.PointsMaterial({
+    color: 0x080604,
+    size: isTouchDevice ? 0.045 : 0.038,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: 0.94,
+    depthWrite: false
+})
+const antColony = new THREE.Points(antGeometry, antMaterial)
+antColony.renderOrder = 6
+antColony.visible = false
+scene.add(antColony)
+let antModeActive = false
+
+const findAntWall = (x, z) => {
+    let closest = null
+    let closestDistance = Infinity
+    for (const wall of collisionWalls) {
+        if (wall.halfX > wall.halfZ) {
+            if (x < wall.x - wall.halfX || x > wall.x + wall.halfX) continue
+            const normal = z < wall.z ? -1 : 1
+            const face = wall.z + normal * wall.halfZ
+            const distance = Math.abs(z - face)
+            if (distance < closestDistance) {
+                closestDistance = distance
+                closest = { axis: 'z', face, normal, min: wall.x - wall.halfX, max: wall.x + wall.halfX }
+            }
+        } else {
+            if (z < wall.z - wall.halfZ || z > wall.z + wall.halfZ) continue
+            const normal = x < wall.x ? -1 : 1
+            const face = wall.x + normal * wall.halfX
+            const distance = Math.abs(x - face)
+            if (distance < closestDistance) {
+                closestDistance = distance
+                closest = { axis: 'x', face, normal, min: wall.z - wall.halfZ, max: wall.z + wall.halfZ }
+            }
+        }
+    }
+    return closest
+}
+
+const updateAnts = (deltaTime, elapsedTime) => {
+    const navigationActive = isTouchDevice ? mobileControlsActive : document.pointerLockElement === canvas
+    const onPad = Math.abs(camera.position.x - antPad.position.x) <= 0.5
+        && Math.abs(camera.position.z - antPad.position.z) <= 0.5
+    if (navigationActive && onPad && !antPad.occupied) {
+        antModeActive = !antModeActive
+        antColony.visible = antModeActive
+    }
+    antPad.occupied = onPad
+    antPad.material.emissiveIntensity = antModeActive ? 2.8 : 1.15 + Math.sin(elapsedTime * 3.4) * 0.35
+    if (!antModeActive) return
+
+    const step = Math.min(deltaTime, 0.05)
+    for (let index = 0; index < ants.length; index++) {
+        const ant = ants[index]
+        if (ant.surface === 'floor') {
+            if (elapsedTime >= ant.turnAt) {
+                ant.turnAt = elapsedTime + THREE.MathUtils.randFloat(0.25, 1.4)
+                ant.angle += THREE.MathUtils.randFloatSpread(1.25)
+            }
+            ant.angle += Math.sin(elapsedTime * 2.1 + index * 0.37) * step * 0.22
+            const nextX = ant.x + Math.cos(ant.angle) * ant.speed * step
+            const nextZ = ant.z + Math.sin(ant.angle) * ant.speed * step
+            if (collidesRadiusAt(nextX, nextZ, 0.012)) {
+                const wall = findAntWall(nextX, nextZ)
+                if (wall && Math.random() < 0.72) {
+                    ant.surface = 'wall'
+                    ant.wall = wall
+                    ant.u = wall.axis === 'z' ? ant.x : ant.z
+                    ant.v = 0.045
+                    ant.du = Math.sin(ant.angle) * ant.speed * 0.42
+                    ant.dv = ant.speed * THREE.MathUtils.randFloat(0.62, 1.12)
+                } else ant.angle += Math.PI * THREE.MathUtils.randFloat(0.7, 1.3)
+            } else {
+                ant.x = nextX
+                ant.z = nextZ
+            }
+        } else {
+            ant.du += Math.sin(elapsedTime * 1.8 + index) * step * 0.018
+            ant.dv += Math.cos(elapsedTime * 1.35 + index * 0.71) * step * 0.012
+            ant.u += ant.du * step
+            ant.v += ant.dv * step
+            if (ant.u < ant.wall.min || ant.u > ant.wall.max) {
+                ant.u = THREE.MathUtils.clamp(ant.u, ant.wall.min, ant.wall.max)
+                ant.du *= -1
+            }
+            if (ant.v > 4.5) {
+                ant.v = 4.5
+                ant.dv = -Math.abs(ant.dv)
+            }
+            if (ant.v <= 0.035) {
+                ant.surface = 'floor'
+                ant.v = 0
+                ant.angle = ant.wall.axis === 'z'
+                    ? (ant.wall.face > 0 ? -Math.PI * 0.5 : Math.PI * 0.5)
+                    : (ant.wall.face > 0 ? Math.PI : 0)
+                ant.x = ant.wall.axis === 'z' ? ant.u : ant.wall.face + Math.cos(ant.angle) * 0.025
+                ant.z = ant.wall.axis === 'z' ? ant.wall.face + Math.sin(ant.angle) * 0.025 : ant.u
+                ant.wall = null
+            }
+        }
+
+        const offset = index * 3
+        if (ant.surface === 'floor') {
+            antPositions[offset] = ant.x
+            antPositions[offset + 1] = 0.045
+            antPositions[offset + 2] = ant.z
+        } else if (ant.wall.axis === 'z') {
+            antPositions[offset] = ant.u
+            antPositions[offset + 1] = ant.v
+            antPositions[offset + 2] = ant.wall.face + ant.wall.normal * 0.018
+        } else {
+            antPositions[offset] = ant.wall.face + ant.wall.normal * 0.018
+            antPositions[offset + 1] = ant.v
+            antPositions[offset + 2] = ant.u
+        }
+    }
+    antGeometry.attributes.position.needsUpdate = true
+}
 
 /**
  * Flooded gallery
@@ -1920,6 +2064,7 @@ const tick = () =>
     updateBlockPhysics(deltaTime, elapsedTime)
     updateVerticalMovement(deltaTime)
     updateLightingEffects(deltaTime, elapsedTime)
+    updateAnts(deltaTime, elapsedTime)
     updateChildrenAmbience()
     updateDust(deltaTime, elapsedTime)
     updateSpecter(elapsedTime)
