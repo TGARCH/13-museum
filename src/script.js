@@ -572,7 +572,14 @@ const startBlockRain = () => {
         fallingBlocks.push({
             mesh,
             velocity: new THREE.Vector3((index % 3 - 1) * 0.18, -0.3, ((index + 1) % 3 - 1) * 0.16),
-            settled: false
+            settled: false,
+            floating: false,
+            floatPhase: index * 1.93 + blockRainCount * 0.71,
+            angularVelocity: new THREE.Vector3(
+                THREE.MathUtils.randFloatSpread(0.45),
+                THREE.MathUtils.randFloatSpread(0.3),
+                THREE.MathUtils.randFloatSpread(0.45)
+            )
         })
     })
 }
@@ -610,7 +617,7 @@ const floodButtonLabel = document.querySelector('.flood-button__label')
 const floodStatus = document.querySelector('.flood-status')
 const floodStatusText = document.querySelector('.flood-status__text')
 const waterLevelStart = -0.12
-const waterLevelKnee = 0.58
+const waterLevelFull = 1.0
 let floodActive = false
 let currentWaterLevel = waterLevelStart
 let targetWaterLevel = waterLevelStart
@@ -704,7 +711,7 @@ scene.add(waterEdge)
 
 const setFlood = (active) => {
     floodActive = active
-    targetWaterLevel = active ? waterLevelKnee : waterLevelStart
+    targetWaterLevel = active ? waterLevelFull : waterLevelStart
     water.visible = true
     waterEdge.visible = true
     floodButton.setAttribute('aria-pressed', String(active))
@@ -1356,6 +1363,33 @@ const updateBlockPhysics = (deltaTime, elapsedTime) => {
     for (const block of fallingBlocks) {
         block.velocity.y -= 9.81 * step
 
+        const blockBottom = block.mesh.position.y - 0.5
+        const touchesWater = currentWaterLevel > 0.015 && blockBottom < currentWaterLevel
+        block.floating = touchesWater
+        if (touchesWater) {
+            // Wyporność stabilizuje lekkie klocki częściowo ponad powierzchnią.
+            const bob = Math.sin(elapsedTime * 1.55 + block.floatPhase) * 0.045
+            const targetFloatY = currentWaterLevel + 0.28 + bob
+            const displacement = targetFloatY - block.mesh.position.y
+            const buoyancy = THREE.MathUtils.clamp(displacement * 22, -4, 34)
+            block.velocity.y += buoyancy * step
+            block.velocity.y *= Math.exp(-2.45 * step)
+
+            // Łagodny, zmienny prąd sprawia, że klocki dryfują po całej sali.
+            block.velocity.x += (
+                Math.sin(elapsedTime * 0.44 + block.floatPhase) * 0.22
+                + Math.sin(block.mesh.position.z * 0.31 + elapsedTime * 0.27) * 0.08
+            ) * step
+            block.velocity.z += (
+                Math.cos(elapsedTime * 0.39 + block.floatPhase * 1.17) * 0.22
+                + Math.cos(block.mesh.position.x * 0.28 - elapsedTime * 0.31) * 0.08
+            ) * step
+            const waterDrag = Math.exp(-0.58 * step)
+            block.velocity.x *= waterDrag
+            block.velocity.z *= waterDrag
+            block.settled = false
+        }
+
         const nextX = block.mesh.position.x + block.velocity.x * step
         if (!collidesRadiusAt(nextX, block.mesh.position.z, 0.52)) block.mesh.position.x = nextX
         else block.velocity.x *= -0.2
@@ -1377,6 +1411,19 @@ const updateBlockPhysics = (deltaTime, elapsedTime) => {
                 block.velocity.x = 0
                 block.velocity.z = 0
             }
+        }
+
+        if (block.floating) {
+            const tiltTargetX = Math.sin(elapsedTime * 1.18 + block.floatPhase) * 0.105
+            const tiltTargetZ = Math.cos(elapsedTime * 1.07 + block.floatPhase * 1.31) * 0.105
+            const tiltBlend = 1 - Math.exp(-step * 2.3)
+            block.mesh.rotation.x = THREE.MathUtils.lerp(block.mesh.rotation.x, tiltTargetX, tiltBlend)
+            block.mesh.rotation.z = THREE.MathUtils.lerp(block.mesh.rotation.z, tiltTargetZ, tiltBlend)
+            block.mesh.rotation.y += block.angularVelocity.y * step * 0.24
+        } else if (block.mesh.position.y > 0.52) {
+            block.mesh.rotation.x += block.angularVelocity.x * step
+            block.mesh.rotation.y += block.angularVelocity.y * step
+            block.mesh.rotation.z += block.angularVelocity.z * step
         }
     }
 
