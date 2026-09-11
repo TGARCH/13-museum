@@ -738,6 +738,7 @@ const findHiddenFishSpawn = () => {
             THREE.MathUtils.randFloat(0.18, Math.max(0.22, currentWaterLevel - 0.16)),
             THREE.MathUtils.randFloat(-12.4, 12.4)
         )
+        if (collidesRadiusAt(candidate.x, candidate.z, 0.12)) continue
         const toCandidate = candidate.clone().sub(camera.position)
         const distance = Math.hypot(toCandidate.x, toCandidate.z)
         const facing = distance > 0 ? viewForward.dot(toCandidate.setY(0).normalize()) : 1
@@ -759,7 +760,7 @@ const spawnFish = () => {
     fishSchoolTarget.set(-schoolCenter.x, THREE.MathUtils.randFloat(0.24, 0.78), -schoolCenter.z)
     fishNextDestinationAt = 0
     for (let index = 0; index < count; index++) {
-        const length = THREE.MathUtils.randFloat(0.05, 0.1)
+        const length = THREE.MathUtils.randFloat(0.08, 0.15)
         const material = new THREE.MeshStandardMaterial({
             color: fishColors[index % fishColors.length],
             emissive: fishColors[index % fishColors.length],
@@ -775,11 +776,14 @@ const spawnFish = () => {
         tail.rotation.x = Math.PI * 0.5
         tail.position.z = -length * 0.58
         group.add(body, tail)
-        group.position.set(
-            THREE.MathUtils.clamp(schoolCenter.x + THREE.MathUtils.randFloatSpread(2.2), -12.7, 12.7),
-            THREE.MathUtils.clamp(schoolCenter.y + THREE.MathUtils.randFloatSpread(0.4), 0.14, currentWaterLevel - 0.12),
-            THREE.MathUtils.clamp(schoolCenter.z + THREE.MathUtils.randFloatSpread(2.2), -12.7, 12.7)
-        )
+        for (let attempt = 0; attempt < 36; attempt++) {
+            group.position.set(
+                THREE.MathUtils.clamp(schoolCenter.x + THREE.MathUtils.randFloatSpread(2.2), -12.7, 12.7),
+                THREE.MathUtils.clamp(schoolCenter.y + THREE.MathUtils.randFloatSpread(0.4), 0.14, currentWaterLevel - 0.12),
+                THREE.MathUtils.clamp(schoolCenter.z + THREE.MathUtils.randFloatSpread(2.2), -12.7, 12.7)
+            )
+            if (!collidesRadiusAt(group.position.x, group.position.z, 0.12)) break
+        }
         scene.add(group)
         const direction = new THREE.Vector3(
             THREE.MathUtils.randFloatSpread(1),
@@ -829,13 +833,14 @@ const updateFish = (deltaTime, elapsedTime) => {
     if (!escaping && (elapsedTime >= fishNextDestinationAt || schoolCenter.distanceTo(fishSchoolTarget) < 1.6)) {
         // Kolejny cel leży daleko od obecnej pozycji ławicy, dzięki czemu
         // rybki przemierzają całą salę zamiast krążyć w jednym narożniku.
-        let nextTarget = null
+        let nextTarget = schoolCenter.clone()
         for (let attempt = 0; attempt < 30; attempt++) {
             const candidate = new THREE.Vector3(
                 THREE.MathUtils.randFloat(-11.8, 11.8),
                 THREE.MathUtils.randFloat(0.22, Math.max(0.28, currentWaterLevel - 0.16)),
                 THREE.MathUtils.randFloat(-11.8, 11.8)
             )
+            if (collidesRadiusAt(candidate.x, candidate.z, 0.14)) continue
             nextTarget = candidate
             if (candidate.distanceTo(schoolCenter) > 13) break
         }
@@ -905,7 +910,26 @@ const updateFish = (deltaTime, elapsedTime) => {
         const desiredVelocity = swimmer.desiredDirection.clone().multiplyScalar(swimmer.speed)
         swimmer.velocity.lerp(desiredVelocity, 1 - Math.exp(-step * (escaping ? 7 : 1.7)))
         swimmer.velocity.y += Math.sin(elapsedTime * 1.4 + swimmer.phase) * step * 0.018
-        swimmer.group.position.addScaledVector(swimmer.velocity, step)
+        const previousX = swimmer.group.position.x
+        const previousZ = swimmer.group.position.z
+        const nextX = previousX + swimmer.velocity.x * step
+        if (collidesRadiusAt(nextX, previousZ, 0.1)) {
+            swimmer.velocity.x *= -0.72
+            swimmer.desiredDirection.x *= -1
+            fishNextDestinationAt = 0
+        } else {
+            swimmer.group.position.x = nextX
+        }
+        const nextZ = previousZ + swimmer.velocity.z * step
+        if (collidesRadiusAt(swimmer.group.position.x, nextZ, 0.1)) {
+            swimmer.velocity.z *= -0.72
+            swimmer.desiredDirection.z *= -1
+            fishNextDestinationAt = 0
+        } else {
+            swimmer.group.position.z = nextZ
+        }
+        swimmer.group.position.y += swimmer.velocity.y * step
+        swimmer.group.position.y = THREE.MathUtils.clamp(swimmer.group.position.y, 0.12, Math.max(0.14, currentWaterLevel - 0.1))
         swimmer.group.lookAt(swimmer.group.position.clone().add(swimmer.velocity))
         swimmer.tail.rotation.z = Math.sin(elapsedTime * (escaping ? 21 : 11) + swimmer.phase) * 0.62
     }
@@ -1375,7 +1399,10 @@ mobileRunButton.addEventListener('pointercancel', stopMobileRunning)
 const requestJump = () => {
     const navigationActive = isTouchDevice ? mobileControlsActive : document.pointerLockElement === canvas
     if (!navigationActive || !playerGrounded) return
-    playerVerticalVelocity = 5.05
+    const feetY = camera.position.y - eyeHeight
+    const waterDepth = THREE.MathUtils.clamp(currentWaterLevel - feetY, 0, waterLevelFull)
+    const waterResistance = THREE.MathUtils.clamp(waterDepth / waterLevelFull, 0, 1)
+    playerVerticalVelocity = 5.05 * THREE.MathUtils.lerp(1, 0.48, waterResistance)
     playerGrounded = false
 }
 mobileJumpButton.addEventListener('pointerdown', (event) => {
@@ -1504,7 +1531,11 @@ const updateWalkControls = (deltaTime) => {
     right.set(Math.cos(yaw), 0, -Math.sin(yaw))
     movement.copy(forward).multiplyScalar(forwardInput).addScaledVector(right, sideInput).normalize()
     const movingFast = isTouchDevice ? mobileRunning : pressedKeys.has('ShiftLeft') || pressedKeys.has('ShiftRight')
-    const currentWalkSpeed = movingFast ? fastWalkSpeed : walkSpeed
+    const feetY = camera.position.y - eyeHeight
+    const waterDepth = THREE.MathUtils.clamp(currentWaterLevel - feetY, 0, waterLevelFull)
+    const waterResistance = THREE.MathUtils.clamp(waterDepth / waterLevelFull, 0, 1)
+    const dryWalkSpeed = movingFast ? fastWalkSpeed : walkSpeed
+    const currentWalkSpeed = dryWalkSpeed * THREE.MathUtils.lerp(1, movingFast ? 0.3 : 0.4, waterResistance)
     movement.multiplyScalar(currentWalkSpeed * Math.min(deltaTime, 0.05))
 
     // Resolve axes separately: a blocked visitor stops in front of the wall,
