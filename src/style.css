@@ -183,6 +183,68 @@ body {
 
 .sound-button:hover { background: rgba(28, 32, 30, 0.82); }
 
+.flood-button {
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    z-index: 12;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 12px;
+    color: rgba(235, 252, 255, 0.92);
+    font: 650 13px/1 Inter, Arial, sans-serif;
+    background: linear-gradient(135deg, rgba(7, 35, 49, 0.88), rgba(7, 68, 85, 0.76));
+    border: 1px solid rgba(100, 222, 239, 0.48);
+    border-radius: 999px;
+    box-shadow: 0 8px 28px rgba(0, 13, 25, 0.34), inset 0 1px rgba(255, 255, 255, 0.09);
+    backdrop-filter: blur(9px);
+    cursor: pointer;
+    transition: background 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.flood-button:hover { transform: translateY(-1px); border-color: rgba(142, 238, 251, 0.82); }
+.flood-button.active {
+    background: linear-gradient(135deg, rgba(3, 83, 111, 0.94), rgba(15, 146, 162, 0.82));
+    border-color: rgba(171, 246, 255, 0.9);
+    box-shadow: 0 0 26px rgba(63, 215, 235, 0.35), inset 0 1px rgba(255, 255, 255, 0.16);
+}
+.flood-button__icon { font-size: 21px; font-weight: 400; line-height: 0.7; transform: rotate(-4deg); }
+.flood-button kbd {
+    padding: 4px 6px;
+    color: rgba(226, 250, 255, 0.74);
+    font: 600 10px/1 Inter, Arial, sans-serif;
+    background: rgba(255, 255, 255, 0.09);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 5px;
+}
+
+.flood-status {
+    position: fixed;
+    top: 68px;
+    right: 18px;
+    z-index: 11;
+    overflow: hidden;
+    min-width: 145px;
+    padding: 8px 12px;
+    color: rgba(228, 250, 255, 0.86);
+    font-size: 12px;
+    text-align: center;
+    background: rgba(4, 24, 34, 0.76);
+    border: 1px solid rgba(92, 208, 225, 0.25);
+    border-radius: 9px;
+    backdrop-filter: blur(8px);
+}
+.flood-status[hidden] { display: none; }
+.flood-status__wave {
+    position: absolute;
+    inset: auto -20% 0;
+    height: 3px;
+    background: repeating-radial-gradient(ellipse at 50% 100%, #69ddec 0 3px, transparent 4px 9px);
+    animation: flood-wave 1.4s linear infinite;
+}
+@keyframes flood-wave { to { transform: translateX(18px); } }
+
 .fabryczka-tag {
     position: fixed;
     z-index: 12;
@@ -250,6 +312,9 @@ body {
     .start-panel.paused .start-card::after { display: none; }
     .walk-hint { display: none; }
     .sound-button { right: 12px; bottom: 12px; z-index: 16; }
+    .flood-button { top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); z-index: 16; }
+    .flood-button kbd { display: none; }
+    .flood-status { top: calc(max(12px, env(safe-area-inset-top)) + 48px); right: max(12px, env(safe-area-inset-right)); }
     .fabryczka-tag { width: min(340px, calc(100vw - 24px)); }
 
     .mobile-controls.active { display: block; }

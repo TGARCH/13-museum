@@ -21,6 +21,15 @@
         </div>
     </div>
     <div class="walk-hint">WASD — ruch&nbsp;&nbsp; • &nbsp;&nbsp;Shift — szybciej&nbsp;&nbsp; • &nbsp;&nbsp;Mysz — rozglądanie&nbsp;&nbsp; • &nbsp;&nbsp;Esc — pauza</div>
+    <button class="flood-button" type="button" aria-pressed="false">
+        <span class="flood-button__icon" aria-hidden="true">≋</span>
+        <span class="flood-button__label">Zalej salę</span>
+        <kbd>F</kbd>
+    </button>
+    <div class="flood-status" role="status" aria-live="polite" hidden>
+        <span class="flood-status__wave" aria-hidden="true"></span>
+        <span class="flood-status__text">Poziom wody rośnie</span>
+    </div>
     <button class="sound-button" type="button">Wycisz muzykę</button>
     <div class="mobile-controls" aria-label="Sterowanie dotykowe">
         <button class="mobile-pause-button" type="button">Pauza</button>

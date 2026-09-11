@@ -603,6 +603,153 @@ const discoPad = createEffectPad(12.15, 7.7, 0x163c68, 0x35d9ff)
 let lightingMode = 'normal'
 
 /**
+ * Flooded gallery
+ */
+const floodButton = document.querySelector('.flood-button')
+const floodButtonLabel = document.querySelector('.flood-button__label')
+const floodStatus = document.querySelector('.flood-status')
+const floodStatusText = document.querySelector('.flood-status__text')
+const waterLevelStart = -0.12
+const waterLevelKnee = 0.58
+let floodActive = false
+let currentWaterLevel = waterLevelStart
+let targetWaterLevel = waterLevelStart
+
+// Procedural waves keep the effect self-contained and lightweight. The shader
+// combines several wave directions with a Fresnel rim and moving highlights.
+const waterGeometry = new THREE.PlaneGeometry(28.2, 28.2, isTouchDevice ? 48 : 88, isTouchDevice ? 48 : 88)
+const waterMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+        uTime: { value: 0 },
+        uOpacity: { value: 0 },
+        uCameraPosition: { value: new THREE.Vector3() },
+        uDeepColor: { value: new THREE.Color(0x063d57) },
+        uSurfaceColor: { value: new THREE.Color(0x52d5e8) }
+    },
+    vertexShader: `
+        uniform float uTime;
+        varying vec3 vWorldPosition;
+        varying vec3 vWorldNormal;
+        varying float vWave;
+
+        void main() {
+            vec3 displaced = position;
+            float waveA = sin(position.x * 0.72 + uTime * 1.15) * 0.026;
+            float waveB = sin(position.y * 1.07 - uTime * 0.82) * 0.018;
+            float waveC = sin((position.x + position.y) * 1.58 + uTime * 1.42) * 0.009;
+            float wave = waveA + waveB + waveC;
+            displaced.z += wave;
+
+            vec4 worldPosition = modelMatrix * vec4(displaced, 1.0);
+            vWorldPosition = worldPosition.xyz;
+            vWorldNormal = normalize(mat3(modelMatrix) * vec3(
+                -0.026 * 0.72 * cos(position.x * 0.72 + uTime * 1.15)
+                    - 0.009 * 1.58 * cos((position.x + position.y) * 1.58 + uTime * 1.42),
+                -0.018 * 1.07 * cos(position.y * 1.07 - uTime * 0.82)
+                    - 0.009 * 1.58 * cos((position.x + position.y) * 1.58 + uTime * 1.42),
+                1.0
+            ));
+            vWave = wave;
+            gl_Position = projectionMatrix * viewMatrix * worldPosition;
+        }
+    `,
+    fragmentShader: `
+        uniform float uTime;
+        uniform float uOpacity;
+        uniform vec3 uCameraPosition;
+        uniform vec3 uDeepColor;
+        uniform vec3 uSurfaceColor;
+        varying vec3 vWorldPosition;
+        varying vec3 vWorldNormal;
+        varying float vWave;
+
+        void main() {
+            vec3 viewDirection = normalize(uCameraPosition - vWorldPosition);
+            float fresnel = pow(1.0 - max(dot(normalize(vWorldNormal), viewDirection), 0.0), 2.4);
+            float causticA = sin(vWorldPosition.x * 2.3 + uTime * 1.7 + sin(vWorldPosition.z * 1.4));
+            float causticB = sin(vWorldPosition.z * 2.0 - uTime * 1.25 + sin(vWorldPosition.x * 1.8));
+            float glint = pow(max(0.0, causticA * causticB), 7.0);
+            vec3 base = mix(uDeepColor, uSurfaceColor, 0.42 + fresnel * 0.5 + vWave * 3.0);
+            vec3 color = base + vec3(0.72, 0.94, 1.0) * glint * 0.34 + fresnel * 0.16;
+            float alpha = (0.47 + fresnel * 0.27 + glint * 0.08) * uOpacity;
+            gl_FragColor = vec4(color, alpha);
+        }
+    `,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide
+})
+const water = new THREE.Mesh(waterGeometry, waterMaterial)
+water.rotation.x = -Math.PI * 0.5
+water.position.y = waterLevelStart
+water.renderOrder = 4
+water.visible = false
+scene.add(water)
+
+const waterEdgeMaterial = new THREE.MeshBasicMaterial({
+    color: 0xa8f3ff,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+})
+const waterEdge = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(28.15, 0.012, 28.15)),
+    waterEdgeMaterial
+)
+waterEdge.position.y = waterLevelStart
+waterEdge.renderOrder = 5
+waterEdge.visible = false
+scene.add(waterEdge)
+
+const setFlood = (active) => {
+    floodActive = active
+    targetWaterLevel = active ? waterLevelKnee : waterLevelStart
+    water.visible = true
+    waterEdge.visible = true
+    floodButton.setAttribute('aria-pressed', String(active))
+    floodButton.classList.toggle('active', active)
+    floodButtonLabel.textContent = active ? 'Spuść wodę' : 'Zalej salę'
+    floodStatus.hidden = false
+    floodStatusText.textContent = active ? 'Poziom wody rośnie' : 'Woda opada'
+}
+
+const toggleFlood = () => setFlood(!floodActive)
+floodButton.addEventListener('click', (event) => {
+    event.stopPropagation()
+    toggleFlood()
+})
+
+const updateFlood = (deltaTime, elapsedTime) => {
+    const previousLevel = currentWaterLevel
+    const riseRate = floodActive ? 0.105 : 0.18
+    const maxStep = riseRate * Math.min(deltaTime, 0.05)
+    currentWaterLevel = THREE.MathUtils.lerp(
+        currentWaterLevel,
+        targetWaterLevel,
+        Math.min(1, maxStep / Math.max(Math.abs(targetWaterLevel - currentWaterLevel), 0.0001))
+    )
+    water.position.y = currentWaterLevel
+    waterEdge.position.y = currentWaterLevel
+    waterMaterial.uniforms.uTime.value = elapsedTime
+    waterMaterial.uniforms.uCameraPosition.value.copy(camera.position)
+    const visibility = THREE.MathUtils.smoothstep(currentWaterLevel, waterLevelStart, waterLevelStart + 0.16)
+    waterMaterial.uniforms.uOpacity.value = visibility
+    waterEdgeMaterial.opacity = visibility * (0.2 + Math.sin(elapsedTime * 1.8) * 0.06)
+
+    const isMoving = Math.abs(currentWaterLevel - targetWaterLevel) > 0.008
+    if (!isMoving && Math.abs(previousLevel - currentWaterLevel) < 0.0002) {
+        floodStatus.hidden = true
+        if (!floodActive) {
+            water.visible = false
+            waterEdge.visible = false
+        }
+    } else {
+        floodStatus.hidden = false
+    }
+}
+
+/**
  * Lights
  */
 
@@ -1057,6 +1204,7 @@ document.addEventListener('mousemove', (event) => {
 window.addEventListener('keydown', (event) => {
     pressedKeys.add(event.code)
     if (event.code === 'Space' && !event.repeat) requestJump()
+    if (event.code === 'KeyF' && !event.repeat) toggleFlood()
     if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(event.code)) {
         event.preventDefault()
     }
@@ -1494,6 +1642,7 @@ const tick = () =>
     updateSpecter(elapsedTime)
     updateMagicCrayons(elapsedTime)
     updateVideoScreens(elapsedTime)
+    updateFlood(deltaTime, elapsedTime)
 
     // Render
     renderer.render(scene, camera)
