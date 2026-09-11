@@ -493,7 +493,7 @@ const collisionWalls = [
     { x: 0, z: -15, halfX: 30, halfZ: 1 },
     { x: 15, z: 0, halfX: 1, halfZ: 30 },
     { x: -15, z: 0, halfX: 1, halfZ: 30 },
-    { x: 7, z: 5, halfX: 5, halfZ: 0.5 },
+    { x: 7, z: 5, halfX: 5, halfZ: 0.25 },
     { x: -7, z: 5, halfX: 5, halfZ: 0.25 },
     { x: 7, z: -5, halfX: 5, halfZ: 0.25 },
     { x: -7, z: -5, halfX: 5, halfZ: 0.25 },
