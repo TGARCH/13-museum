@@ -709,8 +709,153 @@ waterEdge.renderOrder = 5
 waterEdge.visible = false
 scene.add(waterEdge)
 
+// Niewielkie, proceduralne rybki — bez dodatkowych modeli i tekstur.
+const fish = []
+const fishBodyGeometry = new THREE.SphereGeometry(1, 12, 8)
+const fishTailGeometry = new THREE.ConeGeometry(1, 1, 3)
+const fishColors = [0xff5d73, 0xffa62b, 0xffdf58, 0x52d273, 0x36c5f0, 0x6f7cff, 0xb56cff, 0xf05cc6]
+let fullFloodReachedAt = null
+let fishEscapeStartedAt = null
+
+const clearFish = () => {
+    for (const swimmer of fish) {
+        scene.remove(swimmer.group)
+        swimmer.material.dispose()
+    }
+    fish.length = 0
+    fishEscapeStartedAt = null
+}
+
+const findHiddenFishSpawn = () => {
+    const viewForward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw))
+    let best = new THREE.Vector3()
+    let bestScore = -Infinity
+    for (let attempt = 0; attempt < 48; attempt++) {
+        const candidate = new THREE.Vector3(
+            THREE.MathUtils.randFloat(-12.4, 12.4),
+            THREE.MathUtils.randFloat(0.18, Math.max(0.22, currentWaterLevel - 0.16)),
+            THREE.MathUtils.randFloat(-12.4, 12.4)
+        )
+        const toCandidate = candidate.clone().sub(camera.position)
+        const distance = Math.hypot(toCandidate.x, toCandidate.z)
+        const facing = distance > 0 ? viewForward.dot(toCandidate.setY(0).normalize()) : 1
+        // Najlepsze miejsce jest daleko oraz z boku lub za plecami użytkownika.
+        const score = distance - Math.max(facing, -0.2) * 11
+        if (distance > 7.5 && facing < 0.05) return candidate
+        if (score > bestScore) {
+            bestScore = score
+            best.copy(candidate)
+        }
+    }
+    return best
+}
+
+const spawnFish = () => {
+    clearFish()
+    const schoolCenter = findHiddenFishSpawn()
+    const count = isTouchDevice ? 16 : 24
+    for (let index = 0; index < count; index++) {
+        const length = THREE.MathUtils.randFloat(0.05, 0.1)
+        const material = new THREE.MeshStandardMaterial({
+            color: fishColors[index % fishColors.length],
+            emissive: fishColors[index % fishColors.length],
+            emissiveIntensity: 0.16,
+            roughness: 0.42,
+            metalness: 0.06
+        })
+        const group = new THREE.Group()
+        const body = new THREE.Mesh(fishBodyGeometry, material)
+        body.scale.set(length * 0.25, length * 0.18, length * 0.48)
+        const tail = new THREE.Mesh(fishTailGeometry, material)
+        tail.scale.set(length * 0.24, length * 0.3, length * 0.3)
+        tail.rotation.x = Math.PI * 0.5
+        tail.position.z = -length * 0.58
+        group.add(body, tail)
+        group.position.set(
+            THREE.MathUtils.clamp(schoolCenter.x + THREE.MathUtils.randFloatSpread(2.2), -12.7, 12.7),
+            THREE.MathUtils.clamp(schoolCenter.y + THREE.MathUtils.randFloatSpread(0.4), 0.14, currentWaterLevel - 0.12),
+            THREE.MathUtils.clamp(schoolCenter.z + THREE.MathUtils.randFloatSpread(2.2), -12.7, 12.7)
+        )
+        scene.add(group)
+        const direction = new THREE.Vector3(
+            THREE.MathUtils.randFloatSpread(1),
+            THREE.MathUtils.randFloatSpread(0.18),
+            THREE.MathUtils.randFloatSpread(1)
+        ).normalize()
+        fish.push({
+            group,
+            tail,
+            material,
+            velocity: direction.multiplyScalar(THREE.MathUtils.randFloat(0.22, 0.42)),
+            desiredDirection: direction.clone(),
+            speed: THREE.MathUtils.randFloat(0.22, 0.46),
+            nextTurnAt: 0,
+            phase: index * 1.61 + Math.random() * Math.PI
+        })
+    }
+}
+
+const beginFishEscape = (elapsedTime = clock?.getElapsedTime?.() ?? 0) => {
+    fullFloodReachedAt = null
+    if (fish.length && fishEscapeStartedAt === null) fishEscapeStartedAt = elapsedTime
+}
+
+const updateFish = (deltaTime, elapsedTime) => {
+    const floodIsFull = floodActive && Math.abs(currentWaterLevel - waterLevelFull) < 0.008
+    if (floodIsFull && fullFloodReachedAt === null) fullFloodReachedAt = elapsedTime
+    if (!floodIsFull && floodActive) fullFloodReachedAt = null
+    if (floodIsFull && !fish.length && fullFloodReachedAt !== null && elapsedTime - fullFloodReachedAt >= 10) spawnFish()
+
+    if (!fish.length) return
+    if (!floodActive && fishEscapeStartedAt === null) fishEscapeStartedAt = elapsedTime
+    const escaping = fishEscapeStartedAt !== null
+    const step = Math.min(deltaTime, 0.05)
+    const cameraForward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw))
+    const escapeDirection = cameraForward.clone().multiplyScalar(-1)
+
+    for (const swimmer of fish) {
+        if (escaping) {
+            const awayFromCamera = swimmer.group.position.clone().sub(camera.position).setY(0)
+            if (awayFromCamera.lengthSq() > 0.01) awayFromCamera.normalize()
+            swimmer.desiredDirection.copy(escapeDirection).multiplyScalar(1.5).add(awayFromCamera).normalize()
+            swimmer.speed = THREE.MathUtils.lerp(swimmer.speed, 2.7, 1 - Math.exp(-step * 6.5))
+        } else if (elapsedTime >= swimmer.nextTurnAt) {
+            swimmer.nextTurnAt = elapsedTime + THREE.MathUtils.randFloat(0.8, 2.4)
+            swimmer.desiredDirection.set(
+                THREE.MathUtils.randFloatSpread(1),
+                THREE.MathUtils.randFloatSpread(0.32),
+                THREE.MathUtils.randFloatSpread(1)
+            ).normalize()
+        }
+
+        if (!escaping) {
+            const position = swimmer.group.position
+            if (Math.abs(position.x) > 12.2) swimmer.desiredDirection.x -= Math.sign(position.x) * 1.8
+            if (Math.abs(position.z) > 12.2) swimmer.desiredDirection.z -= Math.sign(position.z) * 1.8
+            if (position.y < 0.14) swimmer.desiredDirection.y += 1.2
+            if (position.y > currentWaterLevel - 0.11) swimmer.desiredDirection.y -= 1.2
+            const fromCamera = position.clone().sub(camera.position)
+            const cameraDistance = fromCamera.length()
+            if (cameraDistance < 1.8 && cameraDistance > 0.01) {
+                swimmer.desiredDirection.addScaledVector(fromCamera.normalize(), (1.8 - cameraDistance) * 1.5)
+            }
+            swimmer.desiredDirection.normalize()
+        }
+
+        const desiredVelocity = swimmer.desiredDirection.clone().multiplyScalar(swimmer.speed)
+        swimmer.velocity.lerp(desiredVelocity, 1 - Math.exp(-step * (escaping ? 7 : 1.7)))
+        swimmer.velocity.y += Math.sin(elapsedTime * 1.4 + swimmer.phase) * step * 0.018
+        swimmer.group.position.addScaledVector(swimmer.velocity, step)
+        swimmer.group.lookAt(swimmer.group.position.clone().add(swimmer.velocity))
+        swimmer.tail.rotation.z = Math.sin(elapsedTime * (escaping ? 21 : 11) + swimmer.phase) * 0.62
+    }
+
+    if (escaping && elapsedTime - fishEscapeStartedAt > 1.65) clearFish()
+}
+
 const setFlood = (active) => {
     floodActive = active
+    if (!active) beginFishEscape()
     targetWaterLevel = active ? waterLevelFull : waterLevelStart
     water.visible = true
     waterEdge.visible = true
@@ -1690,6 +1835,7 @@ const tick = () =>
     updateMagicCrayons(elapsedTime)
     updateVideoScreens(elapsedTime)
     updateFlood(deltaTime, elapsedTime)
+    updateFish(deltaTime, elapsedTime)
 
     // Render
     renderer.render(scene, camera)
