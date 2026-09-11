@@ -615,6 +615,12 @@ let lightingMode = 'normal'
  */
 const antCount = isTouchDevice ? 1500 : 2800
 const antWallClearance = 0.03
+const antSpeedTiers = [
+    { share: 0.1, min: 0.18, max: 0.28 },
+    { share: 0.3, min: 0.11, max: 0.17 },
+    { share: 0.5, min: 0.055, max: 0.1 },
+    { share: 0.1, min: 0.018, max: 0.045 }
+]
 const antPositions = new Float32Array(antCount * 3)
 const ants = []
 for (let index = 0; index < antCount; index++) {
@@ -625,9 +631,17 @@ for (let index = 0; index < antCount; index++) {
     antPositions[index * 3] = x
     antPositions[index * 3 + 1] = 0.045
     antPositions[index * 3 + 2] = z
+    let tierPosition = (index + 0.5) / antCount
+    const speedTier = antSpeedTiers.find((tier) => {
+        tierPosition -= tier.share
+        return tierPosition <= 0
+    }) || antSpeedTiers[antSpeedTiers.length - 1]
     ants.push({
         surface: 'floor', x, z, angle: angle + THREE.MathUtils.randFloatSpread(0.7),
-        speed: THREE.MathUtils.randFloat(0.075, 0.18), turnAt: Math.random() * 2,
+        baseSpeed: THREE.MathUtils.randFloat(speedTier.min, speedTier.max),
+        speedPhase: Math.random() * Math.PI * 2,
+        speedChangeRate: THREE.MathUtils.randFloat(0.18, 0.62),
+        turnAt: Math.random() * 2,
         wall: null, u: 0, v: 0, du: 0, dv: 0
     })
 }
@@ -704,14 +718,17 @@ const updateAnts = (deltaTime, elapsedTime) => {
     const step = Math.min(deltaTime, 0.05)
     for (let index = 0; index < ants.length; index++) {
         const ant = ants[index]
+        const speedPulse = Math.sin(elapsedTime * ant.speedChangeRate + ant.speedPhase) * 0.5 + 0.5
+        const currentSpeed = ant.baseSpeed * THREE.MathUtils.lerp(0.72, 1.28, speedPulse)
+        const speedScale = currentSpeed / ant.baseSpeed
         if (ant.surface === 'floor') {
             if (elapsedTime >= ant.turnAt) {
                 ant.turnAt = elapsedTime + THREE.MathUtils.randFloat(0.25, 1.4)
                 ant.angle += THREE.MathUtils.randFloatSpread(1.25)
             }
             ant.angle += Math.sin(elapsedTime * 2.1 + index * 0.37) * step * 0.22
-            const nextX = ant.x + Math.cos(ant.angle) * ant.speed * step
-            const nextZ = ant.z + Math.sin(ant.angle) * ant.speed * step
+            const nextX = ant.x + Math.cos(ant.angle) * currentSpeed * step
+            const nextZ = ant.z + Math.sin(ant.angle) * currentSpeed * step
             if (collidesRadiusAt(nextX, nextZ, antWallClearance)) {
                 const wall = findAntWall(nextX, nextZ)
                 if (wall && Math.random() < 0.72) {
@@ -719,18 +736,18 @@ const updateAnts = (deltaTime, elapsedTime) => {
                     ant.wall = wall
                     ant.u = wall.axis === 'z' ? ant.x : ant.z
                     ant.v = antWallClearance
-                    ant.du = Math.sin(ant.angle) * ant.speed * 0.42
-                    ant.dv = ant.speed * THREE.MathUtils.randFloat(0.62, 1.12)
+                    ant.du = Math.sin(ant.angle) * ant.baseSpeed * 0.42
+                    ant.dv = ant.baseSpeed * THREE.MathUtils.randFloat(0.62, 1.12)
                 } else ant.angle += Math.PI * THREE.MathUtils.randFloat(0.7, 1.3)
             } else {
                 ant.x = nextX
                 ant.z = nextZ
             }
         } else {
-            ant.du += Math.sin(elapsedTime * 1.8 + index) * step * 0.018
-            ant.dv += Math.cos(elapsedTime * 1.35 + index * 0.71) * step * 0.012
-            ant.u += ant.du * step
-            ant.v += ant.dv * step
+            ant.du += Math.sin(elapsedTime * 1.8 + index) * step * ant.baseSpeed * 0.18
+            ant.dv += Math.cos(elapsedTime * 1.35 + index * 0.71) * step * ant.baseSpeed * 0.12
+            ant.u += ant.du * speedScale * step
+            ant.v += ant.dv * speedScale * step
             if (ant.u < ant.wall.min || ant.u > ant.wall.max) {
                 ant.u = THREE.MathUtils.clamp(ant.u, ant.wall.min, ant.wall.max)
                 ant.du *= -1
