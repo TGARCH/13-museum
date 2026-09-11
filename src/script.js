@@ -716,6 +716,8 @@ const fishTailGeometry = new THREE.ConeGeometry(1, 1, 3)
 const fishColors = [0xff5d73, 0xffa62b, 0xffdf58, 0x52d273, 0x36c5f0, 0x6f7cff, 0xb56cff, 0xf05cc6]
 let fullFloodReachedAt = null
 let fishEscapeStartedAt = null
+const fishSchoolTarget = new THREE.Vector3()
+let fishNextDestinationAt = 0
 
 const clearFish = () => {
     for (const swimmer of fish) {
@@ -753,7 +755,9 @@ const findHiddenFishSpawn = () => {
 const spawnFish = () => {
     clearFish()
     const schoolCenter = findHiddenFishSpawn()
-    const count = isTouchDevice ? 16 : 24
+    const count = isTouchDevice ? 34 : 48
+    fishSchoolTarget.set(-schoolCenter.x, THREE.MathUtils.randFloat(0.24, 0.78), -schoolCenter.z)
+    fishNextDestinationAt = 0
     for (let index = 0; index < count; index++) {
         const length = THREE.MathUtils.randFloat(0.05, 0.1)
         const material = new THREE.MeshStandardMaterial({
@@ -788,7 +792,7 @@ const spawnFish = () => {
             material,
             velocity: direction.multiplyScalar(THREE.MathUtils.randFloat(0.22, 0.42)),
             desiredDirection: direction.clone(),
-            speed: THREE.MathUtils.randFloat(0.22, 0.46),
+            speed: THREE.MathUtils.randFloat(0.62, 0.92),
             nextTurnAt: 0,
             phase: index * 1.61 + Math.random() * Math.PI
         })
@@ -813,7 +817,34 @@ const updateFish = (deltaTime, elapsedTime) => {
     const cameraForward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw))
     const escapeDirection = cameraForward.clone().multiplyScalar(-1)
 
+    const schoolCenter = new THREE.Vector3()
+    const schoolVelocity = new THREE.Vector3()
     for (const swimmer of fish) {
+        schoolCenter.add(swimmer.group.position)
+        schoolVelocity.add(swimmer.velocity)
+    }
+    schoolCenter.multiplyScalar(1 / fish.length)
+    schoolVelocity.multiplyScalar(1 / fish.length)
+
+    if (!escaping && (elapsedTime >= fishNextDestinationAt || schoolCenter.distanceTo(fishSchoolTarget) < 1.6)) {
+        // Kolejny cel leży daleko od obecnej pozycji ławicy, dzięki czemu
+        // rybki przemierzają całą salę zamiast krążyć w jednym narożniku.
+        let nextTarget = null
+        for (let attempt = 0; attempt < 30; attempt++) {
+            const candidate = new THREE.Vector3(
+                THREE.MathUtils.randFloat(-11.8, 11.8),
+                THREE.MathUtils.randFloat(0.22, Math.max(0.28, currentWaterLevel - 0.16)),
+                THREE.MathUtils.randFloat(-11.8, 11.8)
+            )
+            nextTarget = candidate
+            if (candidate.distanceTo(schoolCenter) > 13) break
+        }
+        fishSchoolTarget.copy(nextTarget)
+        fishNextDestinationAt = elapsedTime + THREE.MathUtils.randFloat(12, 18)
+    }
+
+    for (let swimmerIndex = 0; swimmerIndex < fish.length; swimmerIndex++) {
+        const swimmer = fish[swimmerIndex]
         if (escaping) {
             const awayFromCamera = swimmer.group.position.clone().sub(camera.position).setY(0)
             if (awayFromCamera.lengthSq() > 0.01) awayFromCamera.normalize()
@@ -830,6 +861,35 @@ const updateFish = (deltaTime, elapsedTime) => {
 
         if (!escaping) {
             const position = swimmer.group.position
+            const separation = new THREE.Vector3()
+            let closeNeighbours = 0
+            for (let neighbourIndex = 0; neighbourIndex < fish.length; neighbourIndex++) {
+                if (neighbourIndex === swimmerIndex) continue
+                const neighbourPosition = fish[neighbourIndex].group.position
+                const offsetX = position.x - neighbourPosition.x
+                const offsetY = position.y - neighbourPosition.y
+                const offsetZ = position.z - neighbourPosition.z
+                const distanceSq = offsetX * offsetX + offsetY * offsetY + offsetZ * offsetZ
+                if (distanceSq < 0.32 * 0.32 && distanceSq > 0.000001) {
+                    const strength = 1 / (Math.sqrt(distanceSq) * Math.max(distanceSq, 0.0025))
+                    separation.x += offsetX * strength
+                    separation.y += offsetY * strength
+                    separation.z += offsetZ * strength
+                    closeNeighbours++
+                }
+            }
+            if (closeNeighbours) separation.multiplyScalar(1 / closeNeighbours)
+
+            const toDestination = fishSchoolTarget.clone().sub(position).normalize()
+            const toSchool = schoolCenter.clone().sub(position).normalize()
+            const alignment = schoolVelocity.clone().normalize()
+            swimmer.desiredDirection
+                .multiplyScalar(0.3)
+                .addScaledVector(toDestination, 1.25)
+                .addScaledVector(toSchool, 0.62)
+                .addScaledVector(alignment, 0.72)
+                .addScaledVector(separation, 0.018)
+
             if (Math.abs(position.x) > 12.2) swimmer.desiredDirection.x -= Math.sign(position.x) * 1.8
             if (Math.abs(position.z) > 12.2) swimmer.desiredDirection.z -= Math.sign(position.z) * 1.8
             if (position.y < 0.14) swimmer.desiredDirection.y += 1.2
