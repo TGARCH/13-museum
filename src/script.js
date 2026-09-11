@@ -614,6 +614,7 @@ let lightingMode = 'normal'
  * Ant colony
  */
 const antCount = isTouchDevice ? 1500 : 2800
+const antWallClearance = 0.03
 const antPositions = new Float32Array(antCount * 3)
 const ants = []
 for (let index = 0; index < antCount; index++) {
@@ -711,13 +712,13 @@ const updateAnts = (deltaTime, elapsedTime) => {
             ant.angle += Math.sin(elapsedTime * 2.1 + index * 0.37) * step * 0.22
             const nextX = ant.x + Math.cos(ant.angle) * ant.speed * step
             const nextZ = ant.z + Math.sin(ant.angle) * ant.speed * step
-            if (collidesRadiusAt(nextX, nextZ, 0.012)) {
+            if (collidesRadiusAt(nextX, nextZ, antWallClearance)) {
                 const wall = findAntWall(nextX, nextZ)
                 if (wall && Math.random() < 0.72) {
                     ant.surface = 'wall'
                     ant.wall = wall
                     ant.u = wall.axis === 'z' ? ant.x : ant.z
-                    ant.v = 0.045
+                    ant.v = antWallClearance
                     ant.du = Math.sin(ant.angle) * ant.speed * 0.42
                     ant.dv = ant.speed * THREE.MathUtils.randFloat(0.62, 1.12)
                 } else ant.angle += Math.PI * THREE.MathUtils.randFloat(0.7, 1.3)
@@ -738,14 +739,14 @@ const updateAnts = (deltaTime, elapsedTime) => {
                 ant.v = 4.5
                 ant.dv = -Math.abs(ant.dv)
             }
-            if (ant.v <= 0.035) {
+            if (ant.v <= antWallClearance) {
                 ant.surface = 'floor'
                 ant.v = 0
                 ant.angle = ant.wall.axis === 'z'
                     ? (ant.wall.face > 0 ? -Math.PI * 0.5 : Math.PI * 0.5)
                     : (ant.wall.face > 0 ? Math.PI : 0)
-                ant.x = ant.wall.axis === 'z' ? ant.u : ant.wall.face + Math.cos(ant.angle) * 0.025
-                ant.z = ant.wall.axis === 'z' ? ant.wall.face + Math.sin(ant.angle) * 0.025 : ant.u
+                ant.x = ant.wall.axis === 'z' ? ant.u : ant.wall.face + Math.cos(ant.angle) * antWallClearance
+                ant.z = ant.wall.axis === 'z' ? ant.wall.face + Math.sin(ant.angle) * antWallClearance : ant.u
                 ant.wall = null
             }
         }
@@ -758,9 +759,9 @@ const updateAnts = (deltaTime, elapsedTime) => {
         } else if (ant.wall.axis === 'z') {
             antPositions[offset] = ant.u
             antPositions[offset + 1] = ant.v
-            antPositions[offset + 2] = ant.wall.face + ant.wall.normal * 0.018
+            antPositions[offset + 2] = ant.wall.face + ant.wall.normal * antWallClearance
         } else {
-            antPositions[offset] = ant.wall.face + ant.wall.normal * 0.018
+            antPositions[offset] = ant.wall.face + ant.wall.normal * antWallClearance
             antPositions[offset + 1] = ant.v
             antPositions[offset + 2] = ant.u
         }
