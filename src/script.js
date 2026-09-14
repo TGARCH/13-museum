@@ -611,15 +611,54 @@ const antPad = createEffectPad(0, 7.7, 0x241b12, 0xff9d35)
 const fogPad = createEffectPad(0, -7.7, 0x4b555c, 0xd8f3ff)
 let lightingMode = 'normal'
 
-// Mgła liniowa daje precyzyjną granicę widoczności. W stanie maksymalnym
-// wszystko oddalone o ponad 1,5 m zlewa się z jej chłodnoszarym kolorem.
+// FogExp2 nie ma widocznej granicy początku mgły. Gęstość narasta
+// równomiernie w całej przestrzeni, zamiast kurczyć pole widzenia jak tunel.
 const fogColor = new THREE.Color(0xc9d0d4)
-const fogClearNear = 65
-const fogClearFar = 80
-const fogDenseNear = 0.12
-const fogDenseFar = 1.5
-scene.fog = new THREE.Fog(fogColor, fogClearNear, fogClearFar)
+const fogDenseDensity = 1.05
+scene.fog = new THREE.FogExp2(fogColor, 0)
 let fogActive = false
+let fogAmount = 0
+
+// Miękkie pasma mgły zaczynają pod sufitem i podczas włączania powoli
+// opadają. To tylko subtelna warstwa ruchu; właściwe zamglenie daje FogExp2.
+const fogCloudCanvas = document.createElement('canvas')
+fogCloudCanvas.width = fogCloudCanvas.height = 128
+const fogCloudContext = fogCloudCanvas.getContext('2d')
+const fogCloudGradient = fogCloudContext.createRadialGradient(64, 64, 5, 64, 64, 64)
+fogCloudGradient.addColorStop(0, 'rgba(235,242,245,0.32)')
+fogCloudGradient.addColorStop(0.42, 'rgba(220,230,234,0.18)')
+fogCloudGradient.addColorStop(1, 'rgba(205,216,221,0)')
+fogCloudContext.fillStyle = fogCloudGradient
+fogCloudContext.fillRect(0, 0, 128, 128)
+const fogCloudTexture = new THREE.CanvasTexture(fogCloudCanvas)
+const fogClouds = []
+const fogCloudCount = isTouchDevice ? 48 : 82
+for (let index = 0; index < fogCloudCount; index++) {
+    const material = new THREE.SpriteMaterial({
+        map: fogCloudTexture,
+        color: 0xe1e8eb,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        fog: true
+    })
+    const sprite = new THREE.Sprite(material)
+    sprite.position.set(
+        THREE.MathUtils.randFloat(-13.5, 13.5),
+        THREE.MathUtils.randFloat(5.5, 6.4),
+        THREE.MathUtils.randFloat(-13.5, 13.5)
+    )
+    const scale = THREE.MathUtils.randFloat(3.8, 7.2)
+    sprite.scale.set(scale, scale * THREE.MathUtils.randFloat(0.45, 0.75), 1)
+    scene.add(sprite)
+    fogClouds.push({
+        sprite,
+        startY: sprite.position.y,
+        phase: THREE.MathUtils.randFloat(0, 0.78),
+        drift: THREE.MathUtils.randFloat(0.05, 0.16),
+        direction: Math.random() * Math.PI * 2
+    })
+}
 
 /**
  * Ant colony
@@ -2394,18 +2433,32 @@ const updateFogEffects = (deltaTime, elapsedTime) => {
     if (navigationActive && onPad && !fogPad.occupied) fogActive = !fogActive
     fogPad.occupied = onPad
 
-    // Około 7–9 sekund do praktycznie pełnego pojawienia się lub zaniku.
-    const blend = 1 - Math.exp(-Math.min(deltaTime, 0.05) * 0.55)
-    scene.fog.near = THREE.MathUtils.lerp(
-        scene.fog.near,
-        fogActive ? fogDenseNear : fogClearNear,
-        blend
+    // Pełne pojawienie się i ustąpienie trwa około 18 sekund.
+    const direction = fogActive ? 1 : -1
+    fogAmount = THREE.MathUtils.clamp(
+        fogAmount + direction * Math.min(deltaTime, 0.05) / 18,
+        0,
+        1
     )
-    scene.fog.far = THREE.MathUtils.lerp(
-        scene.fog.far,
-        fogActive ? fogDenseFar : fogClearFar,
-        blend
-    )
+    const easedAmount = THREE.MathUtils.smoothstep(fogAmount, 0, 1)
+    scene.fog.density = fogDenseDensity * Math.pow(easedAmount, 1.55)
+
+    for (const cloud of fogClouds) {
+        const descent = THREE.MathUtils.smoothstep(
+            THREE.MathUtils.clamp((fogAmount - cloud.phase) / 0.5, 0, 1),
+            0,
+            1
+        )
+        cloud.sprite.position.y = cloud.startY - descent * 5.25
+        cloud.sprite.position.x += Math.cos(cloud.direction) * cloud.drift * deltaTime
+        cloud.sprite.position.z += Math.sin(cloud.direction) * cloud.drift * deltaTime
+        if (cloud.sprite.position.x > 14) cloud.sprite.position.x = -14
+        if (cloud.sprite.position.x < -14) cloud.sprite.position.x = 14
+        if (cloud.sprite.position.z > 14) cloud.sprite.position.z = -14
+        if (cloud.sprite.position.z < -14) cloud.sprite.position.z = 14
+        const localPresence = THREE.MathUtils.clamp((fogAmount - cloud.phase * 0.55) / 0.45, 0, 1)
+        cloud.sprite.material.opacity = localPresence * (0.045 + Math.sin(elapsedTime * 0.22 + cloud.phase * 8) * 0.012)
+    }
 
     const padPulse = 1.15 + Math.sin(elapsedTime * 3.4) * 0.35
     fogPad.material.emissiveIntensity = fogActive ? 2.8 : padPulse
@@ -2524,7 +2577,8 @@ const updateVideoScreens = (elapsedTime) => {
             .subVectors(camera.position, screen.object.position)
         const distance = toCamera.length()
         const facingCamera = screen.normal.dot(toCamera.normalize()) > 0.08
-        const visible = distance < Math.min(9, scene.fog.far) && facingCamera
+        const fogScreenRange = THREE.MathUtils.lerp(9, 1.5, fogAmount)
+        const visible = distance < fogScreenRange && facingCamera
         screen.object.visible = visible
 
         // YouTube ładuje się dopiero, gdy zwiedzający zbliży się do ekranu.
