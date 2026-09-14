@@ -608,7 +608,18 @@ const createEffectPad = (x, z, color, emissive) => {
 const alarmPad = createEffectPad(-12.15, 7.7, 0x671c22, 0xff2638)
 const discoPad = createEffectPad(12.15, 7.7, 0x163c68, 0x35d9ff)
 const antPad = createEffectPad(0, 7.7, 0x241b12, 0xff9d35)
+const fogPad = createEffectPad(0, -7.7, 0x4b555c, 0xd8f3ff)
 let lightingMode = 'normal'
+
+// Mgła liniowa daje precyzyjną granicę widoczności. W stanie maksymalnym
+// wszystko oddalone o ponad 1,5 m zlewa się z jej chłodnoszarym kolorem.
+const fogColor = new THREE.Color(0xc9d0d4)
+const fogClearNear = 65
+const fogClearFar = 80
+const fogDenseNear = 0.12
+const fogDenseFar = 1.5
+scene.fog = new THREE.Fog(fogColor, fogClearNear, fogClearFar)
+let fogActive = false
 
 /**
  * Ant colony
@@ -2375,6 +2386,32 @@ const updateLightingEffects = (deltaTime, elapsedTime) => {
     discoPad.material.emissiveIntensity = lightingMode === 'disco' ? 2.7 : padPulse
 }
 
+const updateFogEffects = (deltaTime, elapsedTime) => {
+    const navigationActive = isTouchDevice ? mobileControlsActive : document.pointerLockElement === canvas
+    const onPad = Math.abs(camera.position.x - fogPad.position.x) <= 0.5
+        && Math.abs(camera.position.z - fogPad.position.z) <= 0.5
+
+    if (navigationActive && onPad && !fogPad.occupied) fogActive = !fogActive
+    fogPad.occupied = onPad
+
+    // Około 7–9 sekund do praktycznie pełnego pojawienia się lub zaniku.
+    const blend = 1 - Math.exp(-Math.min(deltaTime, 0.05) * 0.55)
+    scene.fog.near = THREE.MathUtils.lerp(
+        scene.fog.near,
+        fogActive ? fogDenseNear : fogClearNear,
+        blend
+    )
+    scene.fog.far = THREE.MathUtils.lerp(
+        scene.fog.far,
+        fogActive ? fogDenseFar : fogClearFar,
+        blend
+    )
+
+    const padPulse = 1.15 + Math.sin(elapsedTime * 3.4) * 0.35
+    fogPad.material.emissiveIntensity = fogActive ? 2.8 : padPulse
+    fogPad.material.color.setHex(fogActive ? 0x83949c : 0x4b555c)
+}
+
 const updateDust = (deltaTime, elapsedTime) => {
     const positions = dustGeometry.attributes.position.array
     for (let i = 0; i < dustCount; i++) {
@@ -2487,7 +2524,7 @@ const updateVideoScreens = (elapsedTime) => {
             .subVectors(camera.position, screen.object.position)
         const distance = toCamera.length()
         const facingCamera = screen.normal.dot(toCamera.normalize()) > 0.08
-        const visible = distance < 9 && facingCamera
+        const visible = distance < Math.min(9, scene.fog.far) && facingCamera
         screen.object.visible = visible
 
         // YouTube ładuje się dopiero, gdy zwiedzający zbliży się do ekranu.
@@ -2541,6 +2578,7 @@ const tick = () =>
     updateBlockPhysics(deltaTime, elapsedTime)
     updateVerticalMovement(deltaTime)
     updateLightingEffects(deltaTime, elapsedTime)
+    updateFogEffects(deltaTime, elapsedTime)
     updateChildrenAmbience()
     updateDust(deltaTime, elapsedTime)
     updateSpecter(elapsedTime)
