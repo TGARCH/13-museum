@@ -1228,6 +1228,181 @@ const updateFish = (deltaTime, elapsedTime) => {
     if (escaping && elapsedTime - fishEscapeStartedAt > 1.65) clearFish()
 }
 
+// A single neutral reef-style shark; created once and reused between floods.
+let shark = null
+let sharkFullSince = null
+const sharkRadius = 1.2
+const sharkCruiseSpeed = 1.4 // The small fish cruise at 0.62–0.92.
+const sharkTurnRate = 0.95
+const sharkProbeAngles = [0, 0.35, -0.35, 0.7, -0.7, 1.1, -1.1, 1.65, -1.65, 2.3, -2.3, Math.PI]
+
+const createShark = () => {
+    const group = new THREE.Group()
+    const model = new THREE.Group()
+    model.scale.setScalar(0.85)
+    group.add(model)
+    const skin = new THREE.MeshStandardMaterial({ color: 0x10243f, roughness: 0.58, metalness: 0.04 })
+    const underside = new THREE.MeshStandardMaterial({ color: 0x526071, roughness: 0.7 })
+    const detail = new THREE.MeshStandardMaterial({ color: 0x03070d, roughness: 0.7 })
+    const finMaterial = skin.clone()
+    finMaterial.side = THREE.DoubleSide
+    const profile = [
+        [0.035, -0.76], [0.08, -0.58], [0.17, -0.34], [0.23, -0.08],
+        [0.245, 0.13], [0.22, 0.35], [0.165, 0.55], [0.09, 0.7], [0, 0.79]
+    ]
+    const bodyGeometry = new THREE.LatheGeometry(profile.map(([r, z]) => new THREE.Vector2(r, z)), 28)
+    bodyGeometry.rotateX(Math.PI * 0.5)
+    bodyGeometry.scale(1, 0.78, 1)
+    const body = new THREE.Mesh(bodyGeometry, skin)
+    model.add(body)
+    const belly = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 12), underside)
+    belly.scale.set(0.18, 0.055, 0.5)
+    belly.position.set(0, -0.137, 0.1)
+    model.add(belly)
+
+    const fin = (parent, points) => {
+        const geometry = new THREE.BufferGeometry()
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(points.flat(), 3))
+        geometry.computeVertexNormals()
+        const mesh = new THREE.Mesh(geometry, finMaterial)
+        parent.add(mesh)
+        return mesh
+    }
+    fin(model, [[0, 0.15, 0.2], [0, 0.46, -0.15], [0, 0.15, -0.4]])
+    fin(model, [[0, 0.08, -0.39], [0, 0.19, -0.54], [0, 0.06, -0.67]])
+    for (const side of [-1, 1]) {
+        fin(model, [[side * 0.15, -0.055, 0.21], [side * 0.7, -0.13, -0.36], [side * 0.18, -0.1, -0.27]])
+        fin(model, [[side * 0.09, -0.065, -0.38], [side * 0.29, -0.13, -0.59], [side * 0.06, -0.065, -0.61]])
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.018, 12, 8), detail)
+        eye.position.set(side * 0.154, 0.052, 0.55)
+        model.add(eye)
+        // Five thin gill slits follow the curved skin on each side.
+        for (let i = 0; i < 5; i++) {
+            const z = 0.31 - i * 0.052
+            const radius = z >= 0.13 ? 0.245 - (z - 0.13) / 0.22 * 0.025
+                : 0.23 + (z + 0.08) / 0.21 * 0.015
+            const points = [-0.09, -0.045, 0, 0.045, 0.09].map((y) => new THREE.Vector3(
+                side * (radius * Math.sqrt(1 - (y / (radius * 0.78)) ** 2) + 0.003),
+                y, z - y * 0.08
+            ))
+            model.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 8, 0.004, 4, false), detail))
+        }
+    }
+    const mouth = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-0.11, -0.095, 0.57),
+        new THREE.Vector3(-0.055, -0.106, 0.63),
+        new THREE.Vector3(0, -0.105, 0.65),
+        new THREE.Vector3(0.055, -0.106, 0.63),
+        new THREE.Vector3(0.11, -0.095, 0.57)
+    ])
+    model.add(new THREE.Mesh(new THREE.TubeGeometry(mouth, 16, 0.003, 4, false), detail))
+    const tailRoot = new THREE.Group()
+    tailRoot.position.z = -0.63
+    model.add(tailRoot)
+    const peduncle = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), skin)
+    peduncle.scale.set(0.065, 0.052, 0.22)
+    peduncle.position.z = -0.13
+    tailRoot.add(peduncle)
+    const tailTip = new THREE.Group()
+    tailTip.position.z = -0.28
+    tailRoot.add(tailTip)
+    // Unequal upper/lower lobes and a forked trailing edge.
+    fin(tailTip, [[0, 0, 0.06], [0, 0.36, -0.31], [0, 0.055, -0.22]])
+    fin(tailTip, [[0, 0, 0.06], [0, 0.055, -0.22], [0, -0.25, -0.27]])
+    group.visible = false
+    scene.add(group)
+    return { group, model, tailRoot, tailTip, heading: 0, targetHeading: 0, nextTurnAt: 0 }
+}
+
+const sharkAngleDifference = (target, current) => Math.atan2(Math.sin(target - current), Math.cos(target - current))
+const sharkPathClearance = (x, z, heading) => {
+    // The conservative circle encloses the body, fins and swinging tail at every heading.
+    for (let distance = 0.15; distance <= 3; distance += 0.15) {
+        if (collidesRadiusAt(x + Math.sin(heading) * distance, z + Math.cos(heading) * distance, sharkRadius)) {
+            return distance - 0.15
+        }
+    }
+    return 3
+}
+
+const spawnShark = () => {
+    let spawn = null
+    let score = -Infinity
+    const forwardX = -Math.sin(yaw)
+    const forwardZ = -Math.cos(yaw)
+    // Use only verified free positions; never fall back to a point inside a wall.
+    for (let x = -11; x <= 11; x += 2) {
+        for (let z = -11; z <= 11; z += 2) {
+            if (collidesRadiusAt(x, z, sharkRadius)) continue
+            const dx = x - camera.position.x
+            const dz = z - camera.position.z
+            const candidateScore = Math.hypot(dx, dz) - (dx * forwardX + dz * forwardZ) * 0.5
+            if (candidateScore > score) { score = candidateScore; spawn = { x, z } }
+        }
+    }
+    if (!spawn) return
+    if (!shark) shark = createShark()
+    shark.group.position.set(spawn.x, 0.43, spawn.z)
+    shark.heading = sharkProbeAngles.reduce((best, angle) =>
+        sharkPathClearance(spawn.x, spawn.z, angle) > sharkPathClearance(spawn.x, spawn.z, best) ? angle : best, 0)
+    shark.targetHeading = shark.heading
+    shark.nextTurnAt = 0
+    shark.group.rotation.y = shark.heading
+    shark.group.visible = true
+}
+
+const updateShark = (deltaTime, elapsedTime) => {
+    const full = floodActive && currentWaterLevel >= waterLevelFull - 0.0001
+    if (!full) {
+        sharkFullSince = null
+        if (shark) shark.group.visible = false
+        return
+    }
+    if (sharkFullSince === null) sharkFullSince = elapsedTime
+    if ((!shark || !shark.group.visible) && elapsedTime - sharkFullSince >= 30) spawnShark()
+    if (!shark || !shark.group.visible) return
+
+    const step = Math.min(deltaTime, 0.05)
+    const position = shark.group.position
+    if (elapsedTime >= shark.nextTurnAt) {
+        shark.targetHeading = shark.heading + THREE.MathUtils.randFloatSpread(1.8)
+        shark.nextTurnAt = elapsedTime + THREE.MathUtils.randFloat(3, 6)
+    }
+    let desiredHeading = shark.targetHeading
+    if (sharkPathClearance(position.x, position.z, shark.heading) < 2.3
+        || sharkPathClearance(position.x, position.z, desiredHeading) < 2.3) {
+        let bestScore = -Infinity
+        for (const offset of sharkProbeAngles) {
+            const candidate = shark.heading + offset
+            const clearance = sharkPathClearance(position.x, position.z, candidate)
+            const candidateScore = clearance - Math.abs(offset) * 0.32
+            if (candidateScore > bestScore) {
+                bestScore = candidateScore
+                desiredHeading = candidate
+            }
+        }
+        shark.targetHeading = desiredHeading
+        shark.nextTurnAt = elapsedTime + 2
+    }
+    const turn = THREE.MathUtils.clamp(sharkAngleDifference(desiredHeading, shark.heading), -sharkTurnRate * step, sharkTurnRate * step)
+    shark.heading += turn
+    const clearance = sharkPathClearance(position.x, position.z, shark.heading)
+    const speed = sharkCruiseSpeed * THREE.MathUtils.smoothstep(clearance, 0.15, 1.2)
+    const nextX = position.x + Math.sin(shark.heading) * speed * step
+    const nextZ = position.z + Math.cos(shark.heading) * speed * step
+    // Final collision guard also prevents tunnelling after a slow frame.
+    if (!collidesRadiusAt(nextX, nextZ, sharkRadius)) {
+        position.x = nextX
+        position.z = nextZ
+    }
+    position.y = 0.43 + Math.sin(elapsedTime * 0.55) * 0.035
+    shark.group.rotation.y = shark.heading
+    shark.model.rotation.z = THREE.MathUtils.lerp(shark.model.rotation.z, -turn / Math.max(step, 0.0001) * 0.065, 1 - Math.exp(-step * 3))
+    // Side-to-side tail propulsion, with the tip lagging behind the root.
+    shark.tailRoot.rotation.y = Math.sin(elapsedTime * 5.8) * 0.17
+    shark.tailTip.rotation.y = Math.sin(elapsedTime * 5.8 - 0.65) * 0.28
+}
+
 const setFlood = (active) => {
     floodActive = active
     if (!active) beginFishEscape()
@@ -2256,6 +2431,7 @@ const tick = () =>
     updateFlood(deltaTime, elapsedTime)
     updateAnts(deltaTime, elapsedTime)
     updateFish(deltaTime, elapsedTime)
+    updateShark(deltaTime, elapsedTime)
 
     // Render
     renderer.render(scene, camera)
