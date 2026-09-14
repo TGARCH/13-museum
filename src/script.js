@@ -637,7 +637,9 @@ for (let index = 0; index < antCount; index++) {
         return tierPosition <= 0
     }) || antSpeedTiers[antSpeedTiers.length - 1]
     ants.push({
-        surface: 'floor', x, z, angle: angle + THREE.MathUtils.randFloatSpread(0.7),
+        surface: 'floor', x, z, homeX: x, homeZ: z, hidden: false,
+        trail: [{ x, y: 0.045, z, wall: null }],
+        angle: angle + THREE.MathUtils.randFloatSpread(0.7),
         baseSpeed: THREE.MathUtils.randFloat(speedTier.min, speedTier.max),
         speedPhase: Math.random() * Math.PI * 2,
         speedChangeRate: THREE.MathUtils.randFloat(0.18, 0.62),
@@ -675,6 +677,7 @@ antColony.frustumCulled = false
 antColony.visible = false
 scene.add(antColony)
 let antModeActive = false
+let antsReturning = false
 
 const findAntWall = (x, z) => {
     let closest = null
@@ -703,13 +706,74 @@ const findAntWall = (x, z) => {
     return closest
 }
 
+// Store the physical position, without the tiny visual walking tremor.
+const getAntPose = (ant) => ant.surface === 'floor'
+    ? { x: ant.x, y: 0.045, z: ant.z, wall: null }
+    : {
+        x: ant.wall.axis === 'z' ? ant.u : ant.wall.face + ant.wall.normal * antWallClearance,
+        y: ant.v,
+        z: ant.wall.axis === 'z' ? ant.wall.face + ant.wall.normal * antWallClearance : ant.u,
+        wall: ant.wall
+    }
+
+const rememberAntPose = (ant, pose, force = false) => {
+    const last = ant.trail[ant.trail.length - 1]
+    const distance = Math.hypot(pose.x - last.x, pose.y - last.y, pose.z - last.z)
+    if (last.wall !== pose.wall || (distance > 0.000001 && (force || distance >= 0.08))) {
+        ant.trail.push(pose)
+    }
+}
+
+const returnAntHome = (ant, distance) => {
+    let pose = getAntPose(ant)
+    while (ant.trail.length) {
+        const target = ant.trail[ant.trail.length - 1]
+        const length = Math.hypot(target.x - pose.x, target.y - pose.y, target.z - pose.z)
+        if (length > distance) {
+            const fraction = distance / length
+            pose = {
+                x: pose.x + (target.x - pose.x) * fraction,
+                y: pose.y + (target.y - pose.y) * fraction,
+                z: pose.z + (target.z - pose.z) * fraction,
+                wall: pose.wall || target.wall
+            }
+            break
+        }
+        pose = target
+        ant.trail.pop()
+        distance -= length
+    }
+    ant.x = pose.x
+    ant.z = pose.z
+    ant.wall = pose.wall
+    ant.surface = pose.wall ? 'wall' : 'floor'
+    ant.v = pose.wall ? pose.y : 0
+    if (pose.wall) ant.u = pose.wall.axis === 'z' ? pose.x : pose.z
+    if (!ant.trail.length) ant.hidden = true
+}
+
 const updateAnts = (deltaTime, elapsedTime) => {
     const navigationActive = isTouchDevice ? mobileControlsActive : document.pointerLockElement === canvas
     const onPad = Math.abs(camera.position.x - antPad.position.x) <= 0.5
         && Math.abs(camera.position.z - antPad.position.z) <= 0.5
     if (navigationActive && onPad && !antPad.occupied) {
-        antModeActive = !antModeActive
-        antColony.visible = antModeActive
+        if (!antModeActive) {
+            // A completed return starts a fresh excursion from the pad.
+            for (const ant of ants) {
+                ant.surface = 'floor'
+                ant.x = ant.homeX
+                ant.z = ant.homeZ
+                ant.wall = null
+                ant.v = 0
+                ant.hidden = false
+                ant.trail = [getAntPose(ant)]
+            }
+            antModeActive = true
+            antsReturning = false
+            antColony.visible = true
+        } else if (!antsReturning) {
+            antsReturning = true
+        }
     }
     antPad.occupied = onPad
     antPad.material.emissiveIntensity = antModeActive ? 2.8 : 1.15 + Math.sin(elapsedTime * 3.4) * 0.35
@@ -718,6 +782,7 @@ const updateAnts = (deltaTime, elapsedTime) => {
     const step = Math.min(deltaTime, 0.05)
     for (let index = 0; index < ants.length; index++) {
         const ant = ants[index]
+        if (ant.hidden) continue
         const restingHeight = ant.surface === 'floor' ? 0.045 : ant.v
         if (currentWaterLevel >= restingHeight) {
             // Keep the walking/climbing state and horizontal position unchanged
@@ -737,7 +802,15 @@ const updateAnts = (deltaTime, elapsedTime) => {
         const speedPulse = Math.sin(elapsedTime * ant.speedChangeRate + ant.speedPhase) * 0.5 + 0.5
         const currentSpeed = ant.baseSpeed * THREE.MathUtils.lerp(0.72, 1.28, speedPulse)
         const speedScale = currentSpeed / ant.baseSpeed
-        if (ant.surface === 'floor') {
+        const previousPose = getAntPose(ant)
+        const previousAngle = ant.angle
+        if (antsReturning) {
+            returnAntHome(ant, currentSpeed * step)
+            if (ant.hidden) {
+                antPositions[index * 3 + 1] = -1000
+                continue
+            }
+        } else if (ant.surface === 'floor') {
             if (elapsedTime >= ant.turnAt) {
                 ant.turnAt = elapsedTime + THREE.MathUtils.randFloat(0.25, 1.4)
                 ant.angle += THREE.MathUtils.randFloatSpread(1.25)
@@ -746,6 +819,7 @@ const updateAnts = (deltaTime, elapsedTime) => {
             const nextX = ant.x + Math.cos(ant.angle) * currentSpeed * step
             const nextZ = ant.z + Math.sin(ant.angle) * currentSpeed * step
             if (collidesRadiusAt(nextX, nextZ, antWallClearance)) {
+                rememberAntPose(ant, previousPose, true)
                 const wall = findAntWall(nextX, nextZ)
                 if (wall && Math.random() < 0.72) {
                     ant.surface = 'wall'
@@ -784,6 +858,14 @@ const updateAnts = (deltaTime, elapsedTime) => {
             }
         }
 
+        if (!antsReturning) {
+            // Preserve corners and surface changes as well as spaced samples.
+            if (previousPose.wall !== ant.wall || Math.abs(ant.angle - previousAngle) > 0.08) {
+                rememberAntPose(ant, previousPose, true)
+            }
+            rememberAntPose(ant, getAntPose(ant))
+        }
+
         const offset = index * 3
         if (ant.surface === 'floor') {
             antPositions[offset] = ant.x
@@ -798,6 +880,25 @@ const updateAnts = (deltaTime, elapsedTime) => {
             antPositions[offset + 1] = ant.v
             antPositions[offset + 2] = ant.u
         }
+        // Millimetre-scale, individually phased tremor; never changes navigation
+        // or the trail. Floating ants skip this block and remain still.
+        const phase = ant.speedPhase + index * 0.73
+        const tremorA = (Math.sin(elapsedTime * 37 + phase)
+            + 0.45 * Math.sin(elapsedTime * 61.7 + phase * 2.3)) * 0.0018
+        const tremorB = (Math.sin(elapsedTime * 43.3 + phase * 1.7)
+            + 0.4 * Math.sin(elapsedTime * 71.1 + phase)) * 0.0018
+        if (ant.surface === 'floor') {
+            antPositions[offset] += tremorA
+            antPositions[offset + 2] += tremorB
+        } else {
+            antPositions[offset + (ant.wall.axis === 'z' ? 0 : 2)] += tremorA
+            antPositions[offset + 1] += tremorB
+        }
+    }
+    if (antsReturning && ants.every((ant) => ant.hidden)) {
+        antModeActive = false
+        antsReturning = false
+        antColony.visible = false
     }
     antGeometry.attributes.position.needsUpdate = true
 }
