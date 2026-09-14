@@ -718,6 +718,22 @@ const updateAnts = (deltaTime, elapsedTime) => {
     const step = Math.min(deltaTime, 0.05)
     for (let index = 0; index < ants.length; index++) {
         const ant = ants[index]
+        const restingHeight = ant.surface === 'floor' ? 0.045 : ant.v
+        if (currentWaterLevel >= restingHeight) {
+            // Keep the walking/climbing state and horizontal position unchanged
+            // while the water lifts the ant. Resume from here as it recedes.
+            const x = ant.surface === 'floor' ? ant.x
+                : ant.wall.axis === 'z' ? ant.u
+                    : ant.wall.face + ant.wall.normal * antWallClearance
+            const z = ant.surface === 'floor' ? ant.z
+                : ant.wall.axis === 'z' ? ant.wall.face + ant.wall.normal * antWallClearance
+                    : ant.u
+            const offset = index * 3
+            antPositions[offset] = x
+            antPositions[offset + 1] = Math.max(restingHeight, getWaterSurfaceHeight(x, z, elapsedTime) + 0.012)
+            antPositions[offset + 2] = z
+            continue
+        }
         const speedPulse = Math.sin(elapsedTime * ant.speedChangeRate + ant.speedPhase) * 0.5 + 0.5
         const currentSpeed = ant.baseSpeed * THREE.MathUtils.lerp(0.72, 1.28, speedPulse)
         const speedScale = currentSpeed / ant.baseSpeed
@@ -795,6 +811,11 @@ const floodStatus = document.querySelector('.flood-status')
 const floodStatusText = document.querySelector('.flood-status__text')
 const waterLevelStart = -0.12
 const waterLevelFull = 1.0
+// Match the water vertex shader: rotating the plane maps local y to world -z.
+const getWaterSurfaceHeight = (x, z, time) => currentWaterLevel
+    + Math.sin(x * 0.72 + time * 1.15) * 0.026
+    + Math.sin(-z * 1.07 - time * 0.82) * 0.018
+    + Math.sin((x - z) * 1.58 + time * 1.42) * 0.009
 let floodActive = false
 let currentWaterLevel = waterLevelStart
 let targetWaterLevel = waterLevelStart
@@ -2137,13 +2158,13 @@ const tick = () =>
     updateBlockPhysics(deltaTime, elapsedTime)
     updateVerticalMovement(deltaTime)
     updateLightingEffects(deltaTime, elapsedTime)
-    updateAnts(deltaTime, elapsedTime)
     updateChildrenAmbience()
     updateDust(deltaTime, elapsedTime)
     updateSpecter(elapsedTime)
     updateMagicCrayons(elapsedTime)
     updateVideoScreens(elapsedTime)
     updateFlood(deltaTime, elapsedTime)
+    updateAnts(deltaTime, elapsedTime)
     updateFish(deltaTime, elapsedTime)
 
     // Render
