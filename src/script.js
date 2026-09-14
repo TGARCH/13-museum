@@ -614,7 +614,7 @@ let lightingMode = 'normal'
 // FogExp2 nie ma widocznej granicy początku mgły. Gęstość narasta
 // równomiernie w całej przestrzeni, zamiast kurczyć pole widzenia jak tunel.
 const fogColor = new THREE.Color(0xc9d0d4)
-const fogDenseDensity = 1.05
+const fogDenseDensity = 0.65
 scene.fog = new THREE.FogExp2(fogColor, 0)
 let fogActive = false
 let fogAmount = 0
@@ -971,8 +971,10 @@ const waterMaterial = new THREE.ShaderMaterial({
         uTime: { value: 0 },
         uOpacity: { value: 0 },
         uCameraPosition: { value: new THREE.Vector3() },
-        uDeepColor: { value: new THREE.Color(0x031329) },
-        uSurfaceColor: { value: new THREE.Color(0x15365d) }
+        uFogDensity: { value: 0 },
+        uFogColor: { value: fogColor },
+        uDeepColor: { value: new THREE.Color(0x315b61) },
+        uSurfaceColor: { value: new THREE.Color(0x78a8a7) }
     },
     vertexShader: `
         uniform float uTime;
@@ -1005,6 +1007,8 @@ const waterMaterial = new THREE.ShaderMaterial({
         uniform float uTime;
         uniform float uOpacity;
         uniform vec3 uCameraPosition;
+        uniform float uFogDensity;
+        uniform vec3 uFogColor;
         uniform vec3 uDeepColor;
         uniform vec3 uSurfaceColor;
         varying vec3 vWorldPosition;
@@ -1017,9 +1021,16 @@ const waterMaterial = new THREE.ShaderMaterial({
             float causticA = sin(vWorldPosition.x * 2.3 + uTime * 1.7 + sin(vWorldPosition.z * 1.4));
             float causticB = sin(vWorldPosition.z * 2.0 - uTime * 1.25 + sin(vWorldPosition.x * 1.8));
             float glint = pow(max(0.0, causticA * causticB), 7.0);
-            vec3 base = mix(uDeepColor, uSurfaceColor, 0.42 + fresnel * 0.5 + vWave * 3.0);
-            vec3 color = base + vec3(0.72, 0.94, 1.0) * glint * 0.34 + fresnel * 0.16;
-            float alpha = (0.47 + fresnel * 0.27 + glint * 0.08) * uOpacity;
+            vec3 base = mix(uDeepColor, uSurfaceColor, 0.5 + fresnel * 0.32 + vWave * 2.1);
+            vec3 color = base + vec3(0.78, 0.92, 0.91) * glint * 0.18 + fresnel * 0.08;
+            float alpha = (0.38 + fresnel * 0.18 + glint * 0.04) * uOpacity;
+
+            // ShaderMaterial nie dziedziczy mgły sceny automatycznie.
+            // Mieszamy wodę z tym samym kolorem i gęstością, co resztę muzeum.
+            float fogDistance = length(uCameraPosition - vWorldPosition);
+            float fogFactor = 1.0 - exp(-pow(uFogDensity * fogDistance, 2.0));
+            color = mix(color, uFogColor, fogFactor);
+            alpha *= mix(1.0, 0.24, fogFactor);
             gl_FragColor = vec4(color, alpha);
         }
     `,
@@ -1035,11 +1046,11 @@ water.visible = false
 scene.add(water)
 
 const waterEdgeMaterial = new THREE.MeshBasicMaterial({
-    color: 0xa8f3ff,
+    color: 0xa8c9c8,
     transparent: true,
     opacity: 0,
     depthWrite: false,
-    blending: THREE.AdditiveBlending
+    blending: THREE.NormalBlending
 })
 const waterEdge = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.BoxGeometry(waterSize, 0.012, waterSize)),
@@ -1603,9 +1614,10 @@ const updateFlood = (deltaTime, elapsedTime) => {
     waterEdge.position.y = currentWaterLevel
     waterMaterial.uniforms.uTime.value = elapsedTime
     waterMaterial.uniforms.uCameraPosition.value.copy(camera.position)
+    waterMaterial.uniforms.uFogDensity.value = scene.fog.density
     const visibility = THREE.MathUtils.smoothstep(currentWaterLevel, waterLevelStart, waterLevelStart + 0.16)
     waterMaterial.uniforms.uOpacity.value = visibility
-    waterEdgeMaterial.opacity = visibility * (0.2 + Math.sin(elapsedTime * 1.8) * 0.06)
+    waterEdgeMaterial.opacity = visibility * (0.1 + Math.sin(elapsedTime * 1.8) * 0.025) * (1 - fogAmount * 0.88)
 
     const isMoving = Math.abs(currentWaterLevel - targetWaterLevel) > 0.008
     if (!isMoving && Math.abs(previousLevel - currentWaterLevel) < 0.0002) {
@@ -2577,7 +2589,7 @@ const updateVideoScreens = (elapsedTime) => {
             .subVectors(camera.position, screen.object.position)
         const distance = toCamera.length()
         const facingCamera = screen.normal.dot(toCamera.normalize()) > 0.08
-        const fogScreenRange = THREE.MathUtils.lerp(9, 1.5, fogAmount)
+        const fogScreenRange = THREE.MathUtils.lerp(9, 2.5, fogAmount)
         const visible = distance < fogScreenRange && facingCamera
         screen.object.visible = visible
 
