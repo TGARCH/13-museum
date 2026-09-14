@@ -707,14 +707,14 @@ const findAntWall = (x, z) => {
 }
 
 // Store the physical position, without the tiny visual walking tremor.
-const getAntPose = (ant) => ant.surface === 'floor'
+const getAntPose = (ant) => ant.returnPose || (ant.surface === 'floor'
     ? { x: ant.x, y: 0.045, z: ant.z, wall: null }
     : {
         x: ant.wall.axis === 'z' ? ant.u : ant.wall.face + ant.wall.normal * antWallClearance,
         y: ant.v,
         z: ant.wall.axis === 'z' ? ant.wall.face + ant.wall.normal * antWallClearance : ant.u,
         wall: ant.wall
-    }
+    })
 
 const rememberAntPose = (ant, pose, force = false) => {
     const last = ant.trail[ant.trail.length - 1]
@@ -743,6 +743,7 @@ const returnAntHome = (ant, distance) => {
         ant.trail.pop()
         distance -= length
     }
+    ant.returnPose = pose
     ant.x = pose.x
     ant.z = pose.z
     ant.wall = pose.wall
@@ -766,6 +767,7 @@ const updateAnts = (deltaTime, elapsedTime) => {
                 ant.wall = null
                 ant.v = 0
                 ant.hidden = false
+                ant.returnPose = null
                 ant.trail = [getAntPose(ant)]
             }
             antModeActive = true
@@ -783,16 +785,12 @@ const updateAnts = (deltaTime, elapsedTime) => {
     for (let index = 0; index < ants.length; index++) {
         const ant = ants[index]
         if (ant.hidden) continue
-        const restingHeight = ant.surface === 'floor' ? 0.045 : ant.v
+        const physicalPose = getAntPose(ant)
+        const restingHeight = physicalPose.y
         if (currentWaterLevel >= restingHeight) {
             // Keep the walking/climbing state and horizontal position unchanged
             // while the water lifts the ant. Resume from here as it recedes.
-            const x = ant.surface === 'floor' ? ant.x
-                : ant.wall.axis === 'z' ? ant.u
-                    : ant.wall.face + ant.wall.normal * antWallClearance
-            const z = ant.surface === 'floor' ? ant.z
-                : ant.wall.axis === 'z' ? ant.wall.face + ant.wall.normal * antWallClearance
-                    : ant.u
+            const { x, z } = physicalPose
             const offset = index * 3
             antPositions[offset] = x
             antPositions[offset + 1] = Math.max(restingHeight, getWaterSurfaceHeight(x, z, elapsedTime) + 0.012)
@@ -867,19 +865,10 @@ const updateAnts = (deltaTime, elapsedTime) => {
         }
 
         const offset = index * 3
-        if (ant.surface === 'floor') {
-            antPositions[offset] = ant.x
-            antPositions[offset + 1] = 0.045
-            antPositions[offset + 2] = ant.z
-        } else if (ant.wall.axis === 'z') {
-            antPositions[offset] = ant.u
-            antPositions[offset + 1] = ant.v
-            antPositions[offset + 2] = ant.wall.face + ant.wall.normal * antWallClearance
-        } else {
-            antPositions[offset] = ant.wall.face + ant.wall.normal * antWallClearance
-            antPositions[offset + 1] = ant.v
-            antPositions[offset + 2] = ant.u
-        }
+        const pose = getAntPose(ant)
+        antPositions[offset] = pose.x
+        antPositions[offset + 1] = pose.y
+        antPositions[offset + 2] = pose.z
         // Millimetre-scale, individually phased tremor; never changes navigation
         // or the trail. Floating ants skip this block and remain still.
         const phase = ant.speedPhase + index * 0.73
