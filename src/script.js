@@ -921,8 +921,8 @@ const waterMaterial = new THREE.ShaderMaterial({
         uTime: { value: 0 },
         uOpacity: { value: 0 },
         uCameraPosition: { value: new THREE.Vector3() },
-        uDeepColor: { value: new THREE.Color(0x063d57) },
-        uSurfaceColor: { value: new THREE.Color(0x52d5e8) }
+        uDeepColor: { value: new THREE.Color(0x031329) },
+        uSurfaceColor: { value: new THREE.Color(0x15365d) }
     },
     vertexShader: `
         uniform float uTime;
@@ -1228,18 +1228,24 @@ const updateFish = (deltaTime, elapsedTime) => {
     if (escaping && elapsedTime - fishEscapeStartedAt > 1.65) clearFish()
 }
 
-// A single neutral reef-style shark; created once and reused between floods.
+// One shark follows connected routes through every part of the gallery.
 let shark = null
 let sharkFullSince = null
-const sharkRadius = 1.2
-const sharkCruiseSpeed = 1.4 // The small fish cruise at 0.62–0.92.
-const sharkTurnRate = 0.95
-const sharkProbeAngles = [0, 0.35, -0.35, 0.7, -0.7, 1.1, -1.1, 1.65, -1.65, 2.3, -2.3, Math.PI]
+let sharkEscapeStartedAt = null
+let sharkResetPending = false
+let sharkNavigation = null
+const sharkRadius = 0.6 // Includes all fins and tail; fits the narrow gallery passages.
+const sharkCruiseSpeed = 1.4
+const sharkTurnRate = 1.5
+const sharkRegionVisits = new Uint32Array(16)
+const sharkFrustum = new THREE.Frustum()
+const sharkViewMatrix = new THREE.Matrix4()
+const sharkViewSphere = new THREE.Sphere(new THREE.Vector3(), sharkRadius)
 
 const createShark = () => {
     const group = new THREE.Group()
     const model = new THREE.Group()
-    model.scale.setScalar(0.85)
+    model.scale.setScalar(0.42)
     group.add(model)
     const skin = new THREE.MeshStandardMaterial({ color: 0x10243f, roughness: 0.58, metalness: 0.04 })
     const underside = new THREE.MeshStandardMaterial({ color: 0x526071, roughness: 0.7 })
@@ -1314,93 +1320,205 @@ const createShark = () => {
     return { group, model, tailRoot, tailTip, heading: 0, targetHeading: 0, nextTurnAt: 0 }
 }
 
+
 const sharkAngleDifference = (target, current) => Math.atan2(Math.sin(target - current), Math.cos(target - current))
-const sharkPathClearance = (x, z, heading) => {
-    // The conservative circle encloses the body, fins and swinging tail at every heading.
-    for (let distance = 0.15; distance <= 3; distance += 0.15) {
-        if (collidesRadiusAt(x + Math.sin(heading) * distance, z + Math.cos(heading) * distance, sharkRadius)) {
-            return distance - 0.15
-        }
-    }
-    return 3
+const sharkSurfaceY = (x, z, time) => getWaterSurfaceHeight(x, z, time) - 0.10
+
+const refreshSharkView = () => {
+    camera.updateMatrixWorld()
+    sharkViewMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    sharkFrustum.setFromProjectionMatrix(sharkViewMatrix)
+}
+const sharkOutsideView = (x, y, z) => {
+    sharkViewSphere.center.set(x, y, z)
+    return !sharkFrustum.intersectsSphere(sharkViewSphere)
 }
 
-const spawnShark = () => {
-    let spawn = null
-    let score = -Infinity
-    const forwardX = -Math.sin(yaw)
-    const forwardZ = -Math.cos(yaw)
-    // Use only verified free positions; never fall back to a point inside a wall.
-    for (let x = -11; x <= 11; x += 2) {
-        for (let z = -11; z <= 11; z += 2) {
+const buildSharkNavigation = () => {
+    if (sharkNavigation) return sharkNavigation
+    const nodes = []
+    const lookup = new Map()
+    // Offset cells put a lane through the 1.25 m gaps between partitions.
+    for (let ix = 0; ix < 106; ix++) {
+        for (let iz = 0; iz < 106; iz++) {
+            const x = -13.125 + ix * 0.25, z = -13.125 + iz * 0.25
             if (collidesRadiusAt(x, z, sharkRadius)) continue
-            const dx = x - camera.position.x
-            const dz = z - camera.position.z
-            const candidateScore = Math.hypot(dx, dz) - (dx * forwardX + dz * forwardZ) * 0.5
-            if (candidateScore > score) { score = candidateScore; spawn = { x, z } }
+            const region = Math.min(3, Math.floor((x + 14) / 7)) * 4
+                + Math.min(3, Math.floor((z + 14) / 7))
+            lookup.set(ix * 106 + iz, nodes.length)
+            nodes.push({ x, z, ix, iz, region, neighbours: [] })
         }
     }
+    nodes.forEach((node) => {
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const index = lookup.get((node.ix + dx) * 106 + node.iz + dz)
+            if (index === undefined) continue
+            const next = nodes[index]
+            if (Math.abs(next.ix - node.ix) + Math.abs(next.iz - node.iz) !== 1) continue
+            if (!collidesRadiusAt((node.x + next.x) * 0.5, (node.z + next.z) * 0.5, sharkRadius)) {
+                node.neighbours.push(index)
+            }
+        }
+    })
+    sharkNavigation = nodes
+    return nodes
+}
+
+const planSharkRoute = (escaping = false) => {
+    const nodes = buildSharkNavigation()
+    const position = shark.group.position
+    let start = 0, nearest = Infinity
+    nodes.forEach((node, index) => {
+        const distance = Math.hypot(node.x - position.x, node.z - position.z)
+        if (distance < nearest) { nearest = distance; start = index }
+    })
+    const parents = new Int32Array(nodes.length).fill(-1)
+    const distances = new Int32Array(nodes.length)
+    const queue = [start]
+    parents[start] = start
+    for (let head = 0; head < queue.length; head++) {
+        for (const next of nodes[queue[head]].neighbours) {
+            if (parents[next] !== -1) continue
+            parents[next] = queue[head]
+            distances[next] = distances[queue[head]] + 1
+            queue.push(next)
+        }
+    }
+    if (escaping) refreshSharkView()
+    let destination = start, bestScore = -Infinity
+    for (const index of queue) {
+        const node = nodes[index]
+        if (distances[index] < 12) continue
+        const distanceFromVisitor = Math.hypot(node.x - camera.position.x, node.z - camera.position.z)
+        const score = escaping
+            ? (sharkOutsideView(node.x, position.y, node.z) ? 100 : 0) + distanceFromVisitor - distances[index] * 0.04
+            : -sharkRegionVisits[node.region] * 1000 + Math.min(distances[index], 100) + Math.random() * 8
+        if (score > bestScore) { bestScore = score; destination = index }
+    }
+    const path = []
+    for (let index = destination; index !== start; index = parents[index]) path.push(nodes[index])
+    path.push(nodes[start])
+    path.reverse()
+    // Remove only collinear points. Corners remain inside verified free cells.
+    shark.route = path.filter((node, index) => {
+        if (index === 0 || index === path.length - 1) return true
+        const previous = path[index - 1], next = path[index + 1]
+        return (node.x - previous.x) * (next.z - node.z) !== (node.z - previous.z) * (next.x - node.x)
+    })
+    shark.routeIndex = 0
+    shark.destinationRegion = nodes[destination].region
+}
+
+const spawnShark = (elapsedTime) => {
+    refreshSharkView()
+    const nodes = buildSharkNavigation()
+    let spawn = null, best = -Infinity
+    for (const node of nodes) {
+        const distance = Math.hypot(node.x - camera.position.x, node.z - camera.position.z)
+        const y = sharkSurfaceY(node.x, node.z, elapsedTime)
+        if (distance < 7 || !sharkOutsideView(node.x, y, node.z)) continue
+        if (distance > best) { best = distance; spawn = node }
+    }
+    // If no whole-body off-screen spawn exists, wait instead of popping into view.
     if (!spawn) return
     if (!shark) shark = createShark()
-    shark.group.position.set(spawn.x, 0.43, spawn.z)
-    shark.heading = sharkProbeAngles.reduce((best, angle) =>
-        sharkPathClearance(spawn.x, spawn.z, angle) > sharkPathClearance(spawn.x, spawn.z, best) ? angle : best, 0)
-    shark.targetHeading = shark.heading
-    shark.nextTurnAt = 0
+    shark.group.position.set(spawn.x, sharkSurfaceY(spawn.x, spawn.z, elapsedTime), spawn.z)
+    sharkEscapeStartedAt = null
+    sharkRegionVisits.fill(0)
+    sharkRegionVisits[spawn.region]++
+    planSharkRoute()
+    const next = shark.route.find((node) => Math.hypot(node.x - spawn.x, node.z - spawn.z) > 0.01)
+    shark.heading = next ? Math.atan2(next.x - spawn.x, next.z - spawn.z) : 0
     shark.group.rotation.y = shark.heading
     shark.group.visible = true
 }
 
-const updateShark = (deltaTime, elapsedTime) => {
-    const full = floodActive && currentWaterLevel >= waterLevelFull - 0.0001
-    if (!full) {
-        sharkFullSince = null
-        if (shark) shark.group.visible = false
-        return
+// Actual body contact uses a short oriented capsule, not the larger navigation margin.
+const sharkTouchesVisitor = () => {
+    const position = shark.group.position
+    const feet = camera.position.y - eyeHeight
+    if (feet > position.y + 0.2 || camera.position.y < position.y - 0.2) return false
+    const dx = camera.position.x - position.x, dz = camera.position.z - position.z
+    const along = dx * Math.sin(shark.heading) + dz * Math.cos(shark.heading)
+    const across = dx * Math.cos(shark.heading) - dz * Math.sin(shark.heading)
+    const tipDistance = along - THREE.MathUtils.clamp(along, -0.43, 0.28)
+    if (across * across + tipDistance * tipDistance < (visitorRadius + 0.13) ** 2) return true
+    // Include both pectoral fins rather than resetting only on torso contact.
+    for (const side of [-1, 1]) {
+        const ax = side * 0.063, az = 0.088
+        const bx = side * 0.294, bz = -0.151
+        const vx = bx - ax, vz = bz - az
+        const t = THREE.MathUtils.clamp(((across - ax) * vx + (along - az) * vz) / (vx * vx + vz * vz), 0, 1)
+        if (Math.hypot(across - ax - vx * t, along - az - vz * t) < visitorRadius + 0.015) return true
     }
-    if (sharkFullSince === null) sharkFullSince = elapsedTime
-    if ((!shark || !shark.group.visible) && elapsedTime - sharkFullSince >= 30) spawnShark()
-    if (!shark || !shark.group.visible) return
+    return false
+}
 
+const updateShark = (deltaTime, elapsedTime) => {
+    if (sharkResetPending) return
+    const full = floodActive && currentWaterLevel >= waterLevelFull - 0.0001
+    if (!full) sharkFullSince = null
+    else if (sharkFullSince === null) sharkFullSince = elapsedTime
+    if ((!shark || !shark.group.visible) && full && elapsedTime - sharkFullSince >= 15) spawnShark(elapsedTime)
+    if (!shark || !shark.group.visible) return
+    if (!floodActive && sharkEscapeStartedAt === null) {
+        sharkEscapeStartedAt = elapsedTime
+        shark.escapeDistance = 0
+        planSharkRoute(true)
+    }
+    const escaping = sharkEscapeStartedAt !== null
     const step = Math.min(deltaTime, 0.05)
     const position = shark.group.position
-    if (elapsedTime >= shark.nextTurnAt) {
-        shark.targetHeading = shark.heading + THREE.MathUtils.randFloatSpread(1.8)
-        shark.nextTurnAt = elapsedTime + THREE.MathUtils.randFloat(3, 6)
+    if (sharkTouchesVisitor()) {
+        sharkResetPending = true
+        window.location.reload()
+        return
     }
-    let desiredHeading = shark.targetHeading
-    if (sharkPathClearance(position.x, position.z, shark.heading) < 2.3
-        || sharkPathClearance(position.x, position.z, desiredHeading) < 2.3) {
-        let bestScore = -Infinity
-        for (const offset of sharkProbeAngles) {
-            const candidate = shark.heading + offset
-            const clearance = sharkPathClearance(position.x, position.z, candidate)
-            const candidateScore = clearance - Math.abs(offset) * 0.32
-            if (candidateScore > bestScore) {
-                bestScore = candidateScore
-                desiredHeading = candidate
-            }
-        }
-        shark.targetHeading = desiredHeading
-        shark.nextTurnAt = elapsedTime + 2
+    if (shark.routeIndex >= shark.route.length) {
+        if (!escaping) sharkRegionVisits[shark.destinationRegion]++
+        planSharkRoute(escaping)
     }
-    const turn = THREE.MathUtils.clamp(sharkAngleDifference(desiredHeading, shark.heading), -sharkTurnRate * step, sharkTurnRate * step)
-    shark.heading += turn
-    const clearance = sharkPathClearance(position.x, position.z, shark.heading)
-    const speed = sharkCruiseSpeed * THREE.MathUtils.smoothstep(clearance, 0.15, 1.2)
-    const nextX = position.x + Math.sin(shark.heading) * speed * step
-    const nextZ = position.z + Math.cos(shark.heading) * speed * step
-    // Final collision guard also prevents tunnelling after a slow frame.
-    if (!collidesRadiusAt(nextX, nextZ, sharkRadius)) {
-        position.x = nextX
-        position.z = nextZ
+    const target = shark.route[shark.routeIndex]
+    const dx = target.x - position.x, dz = target.z - position.z
+    const distance = Math.hypot(dx, dz)
+    let turn = 0
+    if (distance < 0.005) {
+        shark.routeIndex++
+    } else {
+        const desiredHeading = Math.atan2(dx, dz)
+        const difference = sharkAngleDifference(desiredHeading, shark.heading)
+        const turnRate = escaping ? 3.5 : sharkTurnRate
+        turn = THREE.MathUtils.clamp(difference, -turnRate * step, turnRate * step)
+        shark.heading += turn
+        // Slow down for corners rather than sliding sideways or clipping a wall.
+        const alignment = Math.max(0, Math.cos(difference)) ** 4
+        const travel = Math.min(distance, (escaping ? 3.8 : sharkCruiseSpeed) * alignment * step)
+        const nextX = position.x + dx / distance * travel, nextZ = position.z + dz / distance * travel
+        if (!collidesRadiusAt(nextX, nextZ, sharkRadius)) {
+            position.x = nextX; position.z = nextZ
+            if (escaping) shark.escapeDistance += travel
+        } else planSharkRoute(escaping)
     }
-    position.y = 0.43 + Math.sin(elapsedTime * 0.55) * 0.035
+    position.y = Math.max(0.16, sharkSurfaceY(position.x, position.z, elapsedTime))
     shark.group.rotation.y = shark.heading
-    shark.model.rotation.z = THREE.MathUtils.lerp(shark.model.rotation.z, -turn / Math.max(step, 0.0001) * 0.065, 1 - Math.exp(-step * 3))
-    // Side-to-side tail propulsion, with the tip lagging behind the root.
-    shark.tailRoot.rotation.y = Math.sin(elapsedTime * 5.8) * 0.17
-    shark.tailTip.rotation.y = Math.sin(elapsedTime * 5.8 - 0.65) * 0.28
+    shark.model.rotation.z = THREE.MathUtils.lerp(shark.model.rotation.z, -turn / Math.max(step, 0.0001) * 0.035, 1 - Math.exp(-step * 3))
+    const tailRate = escaping ? 12 : 5.8
+    shark.tailRoot.rotation.y = Math.sin(elapsedTime * tailRate) * 0.17
+    shark.tailTip.rotation.y = Math.sin(elapsedTime * tailRate - 0.65) * 0.28
+    if (sharkTouchesVisitor()) {
+        sharkResetPending = true
+        window.location.reload()
+        return
+    }
+    if (escaping) {
+        refreshSharkView()
+        const hidden = sharkOutsideView(position.x, position.y, position.z)
+        // Allow a visible fast departure; remove off-screen, or once fully drained.
+        if ((elapsedTime - sharkEscapeStartedAt > 1 && shark.escapeDistance > 2 && hidden) || currentWaterLevel <= 0.05) {
+            shark.group.visible = false
+            sharkEscapeStartedAt = null
+        }
+    }
 }
 
 const setFlood = (active) => {
