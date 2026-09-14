@@ -801,7 +801,10 @@ let targetWaterLevel = waterLevelStart
 
 // Procedural waves keep the effect self-contained and lightweight. The shader
 // combines several wave directions with a Fresnel rim and moving highlights.
-const waterGeometry = new THREE.PlaneGeometry(28.2, 28.2, isTouchDevice ? 48 : 88, isTouchDevice ? 48 : 88)
+// The imported floor spans -14.5 to 14.5 on both horizontal axes.
+// Extend 1 cm into the perimeter walls to avoid a visible seam.
+const waterSize = 29.02
+const waterGeometry = new THREE.PlaneGeometry(waterSize, waterSize, isTouchDevice ? 48 : 88, isTouchDevice ? 48 : 88)
 const waterMaterial = new THREE.ShaderMaterial({
     uniforms: {
         uTime: { value: 0 },
@@ -878,7 +881,7 @@ const waterEdgeMaterial = new THREE.MeshBasicMaterial({
     blending: THREE.AdditiveBlending
 })
 const waterEdge = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.BoxGeometry(28.15, 0.012, 28.15)),
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(waterSize, 0.012, waterSize)),
     waterEdgeMaterial
 )
 waterEdge.position.y = waterLevelStart
