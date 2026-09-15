@@ -535,10 +535,11 @@ const blockRemovalSphere = new THREE.Sphere()
 let lastTimedBlockRemovalAt = 50
 
 const blockIsOutsideVisitorView = (block) => {
-    // Nie usuwaj klocka tuż przy graczu ani podpory, na której stoi.
+    // Pięciometrowa strefa ochronna pozwala usypywać trwałą górę
+    // klocków i zapobiega znikaniu elementu po krótkim odwróceniu wzroku.
     const dx = camera.position.x - block.mesh.position.x
     const dz = camera.position.z - block.mesh.position.z
-    if (Math.hypot(dx, dz) < 2) return false
+    if (Math.hypot(dx, dz) < 5) return false
 
     camera.updateMatrixWorld()
     blockRemovalMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
@@ -566,10 +567,19 @@ const removeFallingBlock = (block) => {
 }
 
 const oldestInvisibleBlock = (minimumAge, elapsedTime) => fallingBlocks
-    .filter((block) => elapsedTime - block.spawnedAt >= minimumAge && blockIsOutsideVisitorView(block))
+    .filter((block) => elapsedTime - block.spawnedAt >= minimumAge
+        && block.outsideVisitorView
+        && elapsedTime - block.lastVisibleAt >= 4)
     .sort((a, b) => a.spawnedAt - b.spawnedAt)[0] || null
 
 const updateBlockCleanup = (elapsedTime) => {
+    // Stan widoczności aktualizujemy w każdej klatce. Klocek musi pozostawać
+    // niewidoczny przez co najmniej 4 sekundy, zanim stanie się kandydatem.
+    for (const block of fallingBlocks) {
+        block.outsideVisitorView = blockIsOutsideVisitorView(block)
+        if (!block.outsideVisitorView) block.lastVisibleAt = elapsedTime
+    }
+
     // Limit wydajnościowy usuwa wyłącznie klocki niewidoczne. Jeżeli wszystkie
     // są w kadrze, chwilowo tolerujemy nadmiar zamiast kasować coś na oczach gracza.
     while (fallingBlocks.length > maxFallingBlocks) {
@@ -622,6 +632,8 @@ const startBlockRain = (elapsedTime) => {
         fallingBlocks.push({
             mesh,
             spawnedAt: elapsedTime,
+            lastVisibleAt: elapsedTime,
+            outsideVisitorView: false,
             velocity: new THREE.Vector3((index % 3 - 1) * 0.18, -0.3, ((index + 1) % 3 - 1) * 0.16),
             settled: false,
             floating: false,
