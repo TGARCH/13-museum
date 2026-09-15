@@ -672,6 +672,7 @@ const alarmPad = createEffectPad(-12.15, 7.7, 0x671c22, 0xff2638)
 const discoPad = createEffectPad(12.15, 7.7, 0x163c68, 0x35d9ff)
 const antPad = createEffectPad(0, 7.7, 0x241b12, 0xff9d35)
 const fogPad = createEffectPad(0, -7.7, 0x4b555c, 0xd8f3ff)
+const waterPad = createEffectPad(-12.15, -7.7, 0x315b61, 0x74d8df)
 let lightingMode = 'normal'
 
 // FogExp2 nie ma widocznej granicy początku mgły. Gęstość narasta
@@ -1008,8 +1009,6 @@ const updateAnts = (deltaTime, elapsedTime) => {
 /**
  * Flooded gallery
  */
-const floodButton = document.querySelector('.flood-button')
-const floodButtonLabel = document.querySelector('.flood-button__label')
 const floodStatus = document.querySelector('.flood-status')
 const floodStatusText = document.querySelector('.flood-status__text')
 const waterLevelStart = -0.12
@@ -1651,20 +1650,23 @@ const setFlood = (active) => {
     targetWaterLevel = active ? waterLevelFull : waterLevelStart
     water.visible = true
     waterEdge.visible = true
-    floodButton.setAttribute('aria-pressed', String(active))
-    floodButton.classList.toggle('active', active)
-    floodButtonLabel.textContent = active ? 'Spuść wodę' : 'Zalej salę'
     floodStatus.hidden = false
     floodStatusText.textContent = active ? 'Poziom wody rośnie' : 'Woda opada'
 }
 
 const toggleFlood = () => setFlood(!floodActive)
-floodButton.addEventListener('click', (event) => {
-    event.stopPropagation()
-    toggleFlood()
-})
 
 const updateFlood = (deltaTime, elapsedTime) => {
+    const navigationActive = isTouchDevice ? mobileControlsActive : document.pointerLockElement === canvas
+    const onWaterPad = Math.abs(camera.position.x - waterPad.position.x) <= 0.5
+        && Math.abs(camera.position.z - waterPad.position.z) <= 0.5
+    if (navigationActive && onWaterPad && !waterPad.occupied) toggleFlood()
+    waterPad.occupied = navigationActive && onWaterPad
+
+    const waterPadPulse = 1.15 + Math.sin(elapsedTime * 3.4) * 0.35
+    waterPad.material.emissiveIntensity = floodActive ? 2.8 : waterPadPulse
+    waterPad.material.color.setHex(floodActive ? 0x5d999d : 0x315b61)
+
     const previousLevel = currentWaterLevel
     const riseRate = floodActive ? 0.105 : 0.18
     const maxStep = riseRate * Math.min(deltaTime, 0.05)
@@ -2152,7 +2154,6 @@ document.addEventListener('mousemove', (event) => {
 window.addEventListener('keydown', (event) => {
     pressedKeys.add(event.code)
     if (event.code === 'Space' && !event.repeat) requestJump()
-    if (event.code === 'KeyF' && !event.repeat) toggleFlood()
     if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(event.code)) {
         event.preventDefault()
     }
