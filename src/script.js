@@ -589,8 +589,8 @@ const updateBlockCleanup = (elapsedTime) => {
     }
 
     // Po osiągnięciu wieku jednej minuty znika najwyżej jeden niewidoczny
-    // klocek na 10 sekund. Świeże klocki z kolejnego deszczu zachowują pełną minutę.
-    if (elapsedTime - lastTimedBlockRemovalAt >= 10) {
+    // klocek na 3 sekundy. Świeże klocki z kolejnego deszczu zachowują pełną minutę.
+    if (elapsedTime - lastTimedBlockRemovalAt >= 3) {
         const candidate = oldestInvisibleBlock(60, elapsedTime)
         if (candidate && removeFallingBlock(candidate)) lastTimedBlockRemovalAt = elapsedTime
     }
