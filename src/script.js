@@ -535,6 +535,11 @@ const blockRemovalSphere = new THREE.Sphere()
 let lastTimedBlockRemovalAt = 50
 
 const blockIsOutsideVisitorView = (block) => {
+    // Nie usuwaj klocka tuż przy graczu ani podpory, na której stoi.
+    const dx = camera.position.x - block.mesh.position.x
+    const dz = camera.position.z - block.mesh.position.z
+    if (Math.hypot(dx, dz) < 2) return false
+
     camera.updateMatrixWorld()
     blockRemovalMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
     blockRemovalFrustum.setFromProjectionMatrix(blockRemovalMatrix)
