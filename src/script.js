@@ -528,6 +528,58 @@ const blockTriggerEdges = new THREE.LineSegments(
 blockTrigger.add(blockTriggerEdges)
 
 const fallingBlocks = []
+const maxFallingBlocks = 42
+const blockRemovalFrustum = new THREE.Frustum()
+const blockRemovalMatrix = new THREE.Matrix4()
+const blockRemovalSphere = new THREE.Sphere()
+let lastTimedBlockRemovalAt = 50
+
+const blockIsOutsideVisitorView = (block) => {
+    camera.updateMatrixWorld()
+    blockRemovalMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    blockRemovalFrustum.setFromProjectionMatrix(blockRemovalMatrix)
+    blockRemovalSphere.center.copy(block.mesh.position)
+    blockRemovalSphere.radius = 0.88
+
+    // Mgła również zasłania obiekty, nawet jeśli geometrycznie są w kadrze.
+    const fogVisibilityDistance = THREE.MathUtils.lerp(50, 2.5, fogAmount)
+    if (camera.position.distanceTo(block.mesh.position) > fogVisibilityDistance) return true
+    return !blockRemovalFrustum.intersectsSphere(blockRemovalSphere)
+}
+
+const removeFallingBlock = (block) => {
+    const index = fallingBlocks.indexOf(block)
+    if (index === -1) return false
+    fallingBlocks.splice(index, 1)
+    scene.remove(block.mesh)
+    block.mesh.traverse((part) => {
+        part.geometry?.dispose()
+        if (Array.isArray(part.material)) part.material.forEach((material) => material.dispose())
+        else part.material?.dispose()
+    })
+    return true
+}
+
+const oldestInvisibleBlock = (minimumAge, elapsedTime) => fallingBlocks
+    .filter((block) => elapsedTime - block.spawnedAt >= minimumAge && blockIsOutsideVisitorView(block))
+    .sort((a, b) => a.spawnedAt - b.spawnedAt)[0] || null
+
+const updateBlockCleanup = (elapsedTime) => {
+    // Limit wydajnościowy usuwa wyłącznie klocki niewidoczne. Jeżeli wszystkie
+    // są w kadrze, chwilowo tolerujemy nadmiar zamiast kasować coś na oczach gracza.
+    while (fallingBlocks.length > maxFallingBlocks) {
+        const candidate = oldestInvisibleBlock(0, elapsedTime)
+        if (!candidate) break
+        removeFallingBlock(candidate)
+    }
+
+    // Po osiągnięciu wieku jednej minuty znika najwyżej jeden niewidoczny
+    // klocek na 10 sekund. Świeże klocki z kolejnego deszczu zachowują pełną minutę.
+    if (elapsedTime - lastTimedBlockRemovalAt >= 10) {
+        const candidate = oldestInvisibleBlock(60, elapsedTime)
+        if (candidate && removeFallingBlock(candidate)) lastTimedBlockRemovalAt = elapsedTime
+    }
+}
 
 let blockTriggerOccupied = false
 let blockRainCount = 0
@@ -539,15 +591,8 @@ const blockSpawnPoints = [
     [9.5, -9], [11.1, -4.4], [10.4, 4.2], [11.2, 9.3]
 ]
 
-const startBlockRain = () => {
+const startBlockRain = (elapsedTime) => {
     blockRainCount++
-
-    // Zachowaj rozsądny koszt sceny po wielu uruchomieniach pola.
-    while (fallingBlocks.length > 42) {
-        const oldest = fallingBlocks.shift()
-        scene.remove(oldest.mesh)
-        oldest.mesh.material.dispose()
-    }
 
     blockSpawnPoints.forEach(([x, z], index) => {
         const material = new THREE.MeshStandardMaterial({
@@ -571,6 +616,7 @@ const startBlockRain = () => {
         scene.add(mesh)
         fallingBlocks.push({
             mesh,
+            spawnedAt: elapsedTime,
             velocity: new THREE.Vector3((index % 3 - 1) * 0.18, -0.3, ((index + 1) % 3 - 1) * 0.16),
             settled: false,
             floating: false,
@@ -2103,7 +2149,7 @@ const pushBlocksByVisitor = (visitorDelta) => {
 
     if (!fallingBlocks.length) return
     for (const block of fallingBlocks) {
-        if (block.mesh.position.y > 0.62) continue
+        if (!block.floating && block.mesh.position.y > 0.62) continue
         const feetY = camera.position.y - eyeHeight
         if (feetY >= block.mesh.position.y + 0.43) continue
         const dx = block.mesh.position.x - camera.position.x
@@ -2233,7 +2279,7 @@ const updateBlockPhysics = (deltaTime, elapsedTime) => {
     const navigationActive = isTouchDevice ? mobileControlsActive : document.pointerLockElement === canvas
     const onTrigger = Math.abs(camera.position.x - blockTriggerPosition.x) <= 0.5
         && Math.abs(camera.position.z - blockTriggerPosition.z) <= 0.5
-    if (navigationActive && onTrigger && !blockTriggerOccupied) startBlockRain()
+    if (navigationActive && onTrigger && !blockTriggerOccupied) startBlockRain(elapsedTime)
     blockTriggerOccupied = navigationActive && onTrigger
 
     const triggerPulse = 1.25 + Math.sin(elapsedTime * 3.2) * 0.45
@@ -2280,7 +2326,37 @@ const updateBlockPhysics = (deltaTime, elapsedTime) => {
         if (!collidesRadiusAt(block.mesh.position.x, nextZ, 0.52)) block.mesh.position.z = nextZ
         else block.velocity.z *= -0.2
 
+        const previousBlockY = block.mesh.position.y
         block.mesh.position.y += block.velocity.y * step
+
+        // Uproszczone pionowe podparcie pozwala budować stabilne stosy.
+        // Sprawdzamy przecięcie górnej powierzchni niższego klocka w tym kroku.
+        let stackSupportY = null
+        if (!block.floating && block.velocity.y <= 0) {
+            for (const supportBlock of fallingBlocks) {
+                if (supportBlock === block) continue
+                if (supportBlock.mesh.position.y >= previousBlockY - 0.42) continue
+                const horizontalOverlap = Math.abs(block.mesh.position.x - supportBlock.mesh.position.x) < 0.82
+                    && Math.abs(block.mesh.position.z - supportBlock.mesh.position.z) < 0.82
+                if (!horizontalOverlap) continue
+                const supportTop = supportBlock.mesh.position.y + 0.5
+                const previousBottom = previousBlockY - 0.5
+                const currentBottom = block.mesh.position.y - 0.5
+                if (previousBottom >= supportTop - 0.045 && currentBottom <= supportTop) {
+                    if (stackSupportY === null || supportTop > stackSupportY) stackSupportY = supportTop
+                }
+            }
+        }
+        if (stackSupportY !== null) {
+            block.mesh.position.y = stackSupportY + 0.5
+            if (Math.abs(block.velocity.y) > 0.55) block.velocity.y *= -0.1
+            else block.velocity.y = 0
+            const stackFriction = Math.pow(0.12, step)
+            block.velocity.x *= stackFriction
+            block.velocity.z *= stackFriction
+            block.settled = Math.abs(block.velocity.y) + Math.abs(block.velocity.x) + Math.abs(block.velocity.z) < 0.04
+        }
+
         if (block.mesh.position.y <= 0.5) {
             block.mesh.position.y = 0.5
             if (Math.abs(block.velocity.y) > 0.55) block.velocity.y *= -0.16
@@ -2295,14 +2371,22 @@ const updateBlockPhysics = (deltaTime, elapsedTime) => {
             }
         }
 
-        if (block.floating) {
+        if (!block.floating && block.settled) {
+            // Ustawienie do najbliższego kąta prostego sprawia, że wygląd
+            // spoczywającego klocka zgadza się z jego prostym colliderem.
+            const stableX = Math.round(block.mesh.rotation.x / (Math.PI * 0.5)) * Math.PI * 0.5
+            const stableZ = Math.round(block.mesh.rotation.z / (Math.PI * 0.5)) * Math.PI * 0.5
+            const settleBlend = 1 - Math.exp(-step * 7)
+            block.mesh.rotation.x = THREE.MathUtils.lerp(block.mesh.rotation.x, stableX, settleBlend)
+            block.mesh.rotation.z = THREE.MathUtils.lerp(block.mesh.rotation.z, stableZ, settleBlend)
+        } else if (block.floating) {
             const tiltTargetX = Math.sin(elapsedTime * 1.18 + block.floatPhase) * 0.105
             const tiltTargetZ = Math.cos(elapsedTime * 1.07 + block.floatPhase * 1.31) * 0.105
             const tiltBlend = 1 - Math.exp(-step * 2.3)
             block.mesh.rotation.x = THREE.MathUtils.lerp(block.mesh.rotation.x, tiltTargetX, tiltBlend)
             block.mesh.rotation.z = THREE.MathUtils.lerp(block.mesh.rotation.z, tiltTargetZ, tiltBlend)
             block.mesh.rotation.y += block.angularVelocity.y * step * 0.24
-        } else if (block.mesh.position.y > 0.52) {
+        } else if (block.mesh.position.y > 0.52 && !block.settled) {
             block.mesh.rotation.x += block.angularVelocity.x * step
             block.mesh.rotation.y += block.angularVelocity.y * step
             block.mesh.rotation.z += block.angularVelocity.z * step
@@ -2353,13 +2437,14 @@ const updateBlockPhysics = (deltaTime, elapsedTime) => {
             const relativeNormalVelocity = (b.velocity.x - a.velocity.x) * nx
                 + (b.velocity.z - a.velocity.z) * nz
             if (relativeNormalVelocity < 0) {
-                const impulse = -relativeNormalVelocity * 0.62
+                const collisionDamping = a.floating && b.floating ? 0.3 : 0.62
+                const impulse = -relativeNormalVelocity * collisionDamping
                 a.velocity.x -= nx * impulse
                 a.velocity.z -= nz * impulse
                 b.velocity.x += nx * impulse
                 b.velocity.z += nz * impulse
             }
-            const separationKick = Math.min(0.16, overlap * 0.7)
+            const separationKick = Math.min(a.floating && b.floating ? 0.035 : 0.16, overlap * 0.7)
             a.velocity.x -= nx * separationKick
             a.velocity.z -= nz * separationKick
             b.velocity.x += nx * separationKick
@@ -2642,6 +2727,7 @@ const tick = () =>
 
     updateWalkControls(deltaTime)
     updateBlockPhysics(deltaTime, elapsedTime)
+    updateBlockCleanup(elapsedTime)
     updateVerticalMovement(deltaTime)
     updateLightingEffects(deltaTime, elapsedTime)
     updateFogEffects(deltaTime, elapsedTime)
