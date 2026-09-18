@@ -675,44 +675,89 @@ const fogPad = createEffectPad(0, -7.7, 0x4b555c, 0xd8f3ff)
 const waterPad = createEffectPad(-12.15, -7.7, 0x315b61, 0x74d8df)
 const earthquakePad = createEffectPad(12.15, -7.7, 0x5a3a24, 0xff8a42)
 
-// Dziesięciosekundowe trzęsienie ziemi: narasta od lekkich drgań do silnych,
-// a w końcowej fazie odsłania proceduralne, nieregularne rysy na ścianach.
+// Dziesięciosekundowe trzęsienie ziemi: narasta od lekkich drgań do silnych.
+// Rysy są rysowane w lokalnej płaszczyźnie każdej ściany, dzięki czemu nie
+// mogą „wisieć” w przestrzeni.
 let earthquakeStartedAt = null
 const earthquakeDuration = 10
 const earthquakeCracks = []
-const crackMaterial = new THREE.LineBasicMaterial({ color: 0x241812, transparent: true, opacity: 0, depthTest: true })
 const crackWalls = [
-    { axis: 'z', face: -9.735, along: [-3.0, 3.0], y: [1.0, 4.4] },
-    { axis: 'z', face: 9.735, along: [-3.0, 3.0], y: [0.8, 4.1] },
-    { axis: 'x', face: -6.735, along: [-3.0, 3.0], y: [1.1, 4.3] },
-    { axis: 'x', face: 6.735, along: [-3.0, 3.0], y: [0.9, 4.2] },
-    { axis: 'z', face: -0.265, along: [-5.5, 5.5], y: [1.0, 4.0] },
-    { axis: 'x', face: 0.265, along: [-5.5, 5.5], y: [1.2, 4.4] }
+    { axis: 'z', face: -9.735, along: [-3.0, 3.0], y: [0.8, 4.45] },
+    { axis: 'z', face: 9.735, along: [-3.0, 3.0], y: [0.8, 4.35] },
+    { axis: 'x', face: -6.735, along: [-3.0, 3.0], y: [0.9, 4.4] },
+    { axis: 'x', face: 6.735, along: [-3.0, 3.0], y: [0.9, 4.35] },
+    { axis: 'z', face: -0.265, along: [-5.2, 5.2], y: [0.9, 4.2] },
+    { axis: 'x', face: 0.265, along: [-5.2, 5.2], y: [1.0, 4.35] }
 ]
+
+const addCrackStroke = (group, points, reveal, opacity = 0.92) => {
+    const geometry = new THREE.BufferGeometry().setFromPoints(points)
+    const material = new THREE.LineBasicMaterial({
+        color: 0x20140f,
+        transparent: true,
+        opacity: 0,
+        depthTest: true,
+        depthWrite: false
+    })
+    const line = new THREE.Line(geometry, material)
+    line.visible = false
+    line.renderOrder = 8
+    group.add(line)
+    earthquakeCracks.push({ line, material, reveal, opacity })
+}
 
 const buildEarthquakeCracks = () => {
     if (earthquakeCracks.length) return
+
     crackWalls.forEach((wall, wallIndex) => {
-        for (let branch = 0; branch < 3; branch++) {
-            const points = []
-            let along = THREE.MathUtils.lerp(wall.along[0], wall.along[1], (branch + 1) / 4)
-            let y = THREE.MathUtils.lerp(wall.y[0], wall.y[1], 0.2 + ((wallIndex + branch) % 4) * 0.16)
-            const direction = branch % 2 ? -1 : 1
-            for (let segment = 0; segment < 9; segment++) {
-                along += THREE.MathUtils.randFloatSpread(0.34) + direction * 0.10
-                y += THREE.MathUtils.randFloat(0.16, 0.38)
-                const surfaceOffset = wall.face > 0 ? -0.012 : 0.012
-                points.push(wall.axis === 'z'
-                    ? new THREE.Vector3(along, y, wall.face + surfaceOffset)
-                    : new THREE.Vector3(wall.face + surfaceOffset, y, along))
+        // Grupa ma lokalny układ XY leżący dokładnie na płaszczyźnie ściany.
+        // Z=0 w grupie oznacza powierzchnię ściany; odsuwamy ją tylko o 8 mm,
+        // żeby uniknąć migotania z-fighting.
+        const group = new THREE.Group()
+        const inward = wall.face > 0 ? -1 : 1
+        if (wall.axis === 'z') {
+            group.position.set(0, 0, wall.face + inward * 0.008)
+            group.rotation.y = wall.face > 0 ? Math.PI : 0
+        } else {
+            group.position.set(wall.face + inward * 0.008, 0, 0)
+            group.rotation.y = wall.face > 0 ? -Math.PI / 2 : Math.PI / 2
+        }
+        scene.add(group)
+
+        for (let crackIndex = 0; crackIndex < 2; crackIndex++) {
+            const seed = (wallIndex + 1) * 17 + crackIndex * 11
+            const baseAlong = THREE.MathUtils.lerp(wall.along[0], wall.along[1], 0.28 + crackIndex * 0.42)
+            const baseY = THREE.MathUtils.lerp(wall.y[0], wall.y[1], 0.18 + ((wallIndex + crackIndex) % 3) * 0.11)
+            const main = [new THREE.Vector3(baseAlong, baseY, 0)]
+            let x = baseAlong
+            let y = baseY
+
+            for (let segment = 1; segment <= 11; segment++) {
+                const sway = Math.sin(seed * 0.71 + segment * 1.83) * 0.13
+                    + Math.sin(seed * 0.29 + segment * 3.17) * 0.055
+                x += sway
+                y += 0.20 + 0.035 * Math.sin(seed + segment * 1.37)
+                main.push(new THREE.Vector3(x, y, 0))
             }
-            const geometry = new THREE.BufferGeometry().setFromPoints(points)
-            const material = crackMaterial.clone()
-            const line = new THREE.Line(geometry, material)
-            line.visible = false
-            line.renderOrder = 3
-            scene.add(line)
-            earthquakeCracks.push({ line, material, reveal: (wallIndex * 3 + branch) / (crackWalls.length * 3) })
+
+            const revealBase = (wallIndex * 2 + crackIndex) / (crackWalls.length * 2)
+            addCrackStroke(group, main, revealBase, 0.96)
+
+            // Krótkie, cieńsze optycznie odnogi wychodzą z głównej szczeliny.
+            ;[4, 7, 9].forEach((joint, branchIndex) => {
+                const origin = main[joint]
+                const side = ((wallIndex + crackIndex + branchIndex) % 2) ? 1 : -1
+                const branch = [origin.clone()]
+                let bx = origin.x
+                let by = origin.y
+                const branchSegments = branchIndex === 1 ? 4 : 3
+                for (let segment = 1; segment <= branchSegments; segment++) {
+                    bx += side * (0.10 + 0.035 * Math.sin(seed + branchIndex * 2.1 + segment))
+                    by += 0.055 + 0.025 * Math.sin(seed * 0.5 + segment * 2.4)
+                    branch.push(new THREE.Vector3(bx, by, 0))
+                }
+                addCrackStroke(group, branch, revealBase + 0.035 + branchIndex * 0.018, 0.68)
+            })
         }
     })
 }
@@ -720,7 +765,10 @@ const buildEarthquakeCracks = () => {
 const startEarthquake = (elapsedTime) => {
     buildEarthquakeCracks()
     earthquakeStartedAt = elapsedTime
-    earthquakeCracks.forEach(({ line, material }) => { line.visible = false; material.opacity = 0 })
+    earthquakeCracks.forEach(({ line, material }) => {
+        line.visible = false
+        material.opacity = 0
+    })
 }
 
 const updateEarthquake = (deltaTime, elapsedTime) => {
@@ -731,28 +779,45 @@ const updateEarthquake = (deltaTime, elapsedTime) => {
     earthquakePad.occupied = onPad
 
     const padPulse = 1.15 + Math.sin(elapsedTime * 3.4) * 0.35
-    earthquakePad.material.emissiveIntensity = earthquakeStartedAt === null ? padPulse : 2.9
-    earthquakePad.material.color.setHex(earthquakeStartedAt === null ? 0x5a3a24 : 0x8a3f25)
+    earthquakePad.material.emissiveIntensity = earthquakeStartedAt === null ? padPulse : 3.4
+    earthquakePad.material.color.setHex(earthquakeStartedAt === null ? 0x5a3a24 : 0xa84324)
     if (earthquakeStartedAt === null) return
 
     const progress = THREE.MathUtils.clamp((elapsedTime - earthquakeStartedAt) / earthquakeDuration, 0, 1)
-    // Narastanie jest spokojne na początku i wyraźnie mocniejsze pod koniec.
     const strength = THREE.MathUtils.smoothstep(progress, 0, 1)
     const shake = strength * strength
-    const lateral = (Math.sin(elapsedTime * 31) + Math.sin(elapsedTime * 47.3) * 0.55) * 0.020 * shake
-    const vertical = (Math.sin(elapsedTime * 38.7) + Math.sin(elapsedTime * 61.1) * 0.35) * 0.010 * shake
-    const roll = (Math.sin(elapsedTime * 24.5) + Math.sin(elapsedTime * 41.2) * 0.45) * 0.006 * shake
-    camera.position.x += lateral
+
+    // Mocniejsze, wieloczęstotliwościowe drgania. Składowe o różnych
+    // częstotliwościach ograniczają wrażenie regularnego kołysania kamery.
+    const lateralX = (
+        Math.sin(elapsedTime * 29.0)
+        + Math.sin(elapsedTime * 47.3) * 0.62
+        + Math.sin(elapsedTime * 71.7) * 0.24
+    ) * 0.058 * shake
+    const lateralZ = (
+        Math.sin(elapsedTime * 33.7 + 1.1)
+        + Math.sin(elapsedTime * 54.9) * 0.48
+    ) * 0.040 * shake
+    const vertical = (
+        Math.sin(elapsedTime * 38.7)
+        + Math.sin(elapsedTime * 61.1) * 0.38
+    ) * 0.023 * shake
+    const roll = (
+        Math.sin(elapsedTime * 24.5)
+        + Math.sin(elapsedTime * 41.2) * 0.45
+    ) * 0.016 * shake
+
+    camera.position.x += lateralX
+    camera.position.z += lateralZ
     camera.position.y += vertical
     camera.rotation.z = roll
 
-    // Rysy zaczynają być widoczne po 7.2 s i pojawiają się kolejno,
-    // zamiast wyskakiwać wszystkie jednocześnie.
-    const crackProgress = THREE.MathUtils.clamp((progress - 0.72) / 0.28, 0, 1)
-    earthquakeCracks.forEach(({ line, material, reveal }) => {
-        const local = THREE.MathUtils.clamp((crackProgress - reveal * 0.72) / 0.28, 0, 1)
+    // Pęknięcia rozwijają się dopiero w końcowej fazie wstrząsu.
+    const crackProgress = THREE.MathUtils.clamp((progress - 0.68) / 0.32, 0, 1)
+    earthquakeCracks.forEach(({ line, material, reveal, opacity }) => {
+        const local = THREE.MathUtils.clamp((crackProgress - reveal * 0.66) / 0.34, 0, 1)
         line.visible = local > 0
-        material.opacity = THREE.MathUtils.smoothstep(local, 0, 1) * 0.82
+        material.opacity = THREE.MathUtils.smoothstep(local, 0, 1) * opacity
     })
 
     if (progress >= 1) {
