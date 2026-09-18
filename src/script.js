@@ -673,6 +673,93 @@ const discoPad = createEffectPad(12.15, 7.7, 0x163c68, 0x35d9ff)
 const antPad = createEffectPad(0, 7.7, 0x241b12, 0xff9d35)
 const fogPad = createEffectPad(0, -7.7, 0x4b555c, 0xd8f3ff)
 const waterPad = createEffectPad(-12.15, -7.7, 0x315b61, 0x74d8df)
+const earthquakePad = createEffectPad(12.15, -7.7, 0x5a3a24, 0xff8a42)
+
+// Dziesięciosekundowe trzęsienie ziemi: narasta od lekkich drgań do silnych,
+// a w końcowej fazie odsłania proceduralne, nieregularne rysy na ścianach.
+let earthquakeStartedAt = null
+const earthquakeDuration = 10
+const earthquakeCracks = []
+const crackMaterial = new THREE.LineBasicMaterial({ color: 0x241812, transparent: true, opacity: 0, depthTest: true })
+const crackWalls = [
+    { axis: 'z', face: -9.735, along: [-3.0, 3.0], y: [1.0, 4.4] },
+    { axis: 'z', face: 9.735, along: [-3.0, 3.0], y: [0.8, 4.1] },
+    { axis: 'x', face: -6.735, along: [-3.0, 3.0], y: [1.1, 4.3] },
+    { axis: 'x', face: 6.735, along: [-3.0, 3.0], y: [0.9, 4.2] },
+    { axis: 'z', face: -0.265, along: [-5.5, 5.5], y: [1.0, 4.0] },
+    { axis: 'x', face: 0.265, along: [-5.5, 5.5], y: [1.2, 4.4] }
+]
+
+const buildEarthquakeCracks = () => {
+    if (earthquakeCracks.length) return
+    crackWalls.forEach((wall, wallIndex) => {
+        for (let branch = 0; branch < 3; branch++) {
+            const points = []
+            let along = THREE.MathUtils.lerp(wall.along[0], wall.along[1], (branch + 1) / 4)
+            let y = THREE.MathUtils.lerp(wall.y[0], wall.y[1], 0.2 + ((wallIndex + branch) % 4) * 0.16)
+            const direction = branch % 2 ? -1 : 1
+            for (let segment = 0; segment < 9; segment++) {
+                along += THREE.MathUtils.randFloatSpread(0.34) + direction * 0.10
+                y += THREE.MathUtils.randFloat(0.16, 0.38)
+                const surfaceOffset = wall.face > 0 ? -0.012 : 0.012
+                points.push(wall.axis === 'z'
+                    ? new THREE.Vector3(along, y, wall.face + surfaceOffset)
+                    : new THREE.Vector3(wall.face + surfaceOffset, y, along))
+            }
+            const geometry = new THREE.BufferGeometry().setFromPoints(points)
+            const material = crackMaterial.clone()
+            const line = new THREE.Line(geometry, material)
+            line.visible = false
+            line.renderOrder = 3
+            scene.add(line)
+            earthquakeCracks.push({ line, material, reveal: (wallIndex * 3 + branch) / (crackWalls.length * 3) })
+        }
+    })
+}
+
+const startEarthquake = (elapsedTime) => {
+    buildEarthquakeCracks()
+    earthquakeStartedAt = elapsedTime
+    earthquakeCracks.forEach(({ line, material }) => { line.visible = false; material.opacity = 0 })
+}
+
+const updateEarthquake = (deltaTime, elapsedTime) => {
+    const navigationActive = isTouchDevice ? mobileControlsActive : document.pointerLockElement === canvas
+    const onPad = Math.abs(camera.position.x - earthquakePad.position.x) <= 0.5
+        && Math.abs(camera.position.z - earthquakePad.position.z) <= 0.5
+    if (navigationActive && onPad && !earthquakePad.occupied && earthquakeStartedAt === null) startEarthquake(elapsedTime)
+    earthquakePad.occupied = onPad
+
+    const padPulse = 1.15 + Math.sin(elapsedTime * 3.4) * 0.35
+    earthquakePad.material.emissiveIntensity = earthquakeStartedAt === null ? padPulse : 2.9
+    earthquakePad.material.color.setHex(earthquakeStartedAt === null ? 0x5a3a24 : 0x8a3f25)
+    if (earthquakeStartedAt === null) return
+
+    const progress = THREE.MathUtils.clamp((elapsedTime - earthquakeStartedAt) / earthquakeDuration, 0, 1)
+    // Narastanie jest spokojne na początku i wyraźnie mocniejsze pod koniec.
+    const strength = THREE.MathUtils.smoothstep(progress, 0, 1)
+    const shake = strength * strength
+    const lateral = (Math.sin(elapsedTime * 31) + Math.sin(elapsedTime * 47.3) * 0.55) * 0.020 * shake
+    const vertical = (Math.sin(elapsedTime * 38.7) + Math.sin(elapsedTime * 61.1) * 0.35) * 0.010 * shake
+    const roll = (Math.sin(elapsedTime * 24.5) + Math.sin(elapsedTime * 41.2) * 0.45) * 0.006 * shake
+    camera.position.x += lateral
+    camera.position.y += vertical
+    camera.rotation.z = roll
+
+    // Rysy zaczynają być widoczne po 7.2 s i pojawiają się kolejno,
+    // zamiast wyskakiwać wszystkie jednocześnie.
+    const crackProgress = THREE.MathUtils.clamp((progress - 0.72) / 0.28, 0, 1)
+    earthquakeCracks.forEach(({ line, material, reveal }) => {
+        const local = THREE.MathUtils.clamp((crackProgress - reveal * 0.72) / 0.28, 0, 1)
+        line.visible = local > 0
+        material.opacity = THREE.MathUtils.smoothstep(local, 0, 1) * 0.82
+    })
+
+    if (progress >= 1) {
+        earthquakeStartedAt = null
+        camera.rotation.z = 0
+    }
+}
 let lightingMode = 'normal'
 
 // FogExp2 nie ma widocznej granicy początku mgły. Gęstość narasta
@@ -2749,6 +2836,7 @@ const tick = () =>
     updateVerticalMovement(deltaTime)
     updateLightingEffects(deltaTime, elapsedTime)
     updateFogEffects(deltaTime, elapsedTime)
+    updateEarthquake(deltaTime, elapsedTime)
     updateChildrenAmbience()
     updateDust(deltaTime, elapsedTime)
     updateSpecter(elapsedTime)
