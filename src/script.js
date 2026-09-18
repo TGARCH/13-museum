@@ -687,9 +687,9 @@ let earthquakeShakeStrength = 0
 const earthquakeCracks = []
 const earthquakeCrackBatches = []
 let earthquakeRun = 0
-const earthquakeCrackFrustum = new THREE.Frustum()
-const earthquakeCrackViewMatrix = new THREE.Matrix4()
-const earthquakeCrackSphere = new THREE.Sphere()
+let earthquakeCrackFrustum = null
+let earthquakeCrackViewMatrix = null
+let earthquakeCrackSphere = null
 const crackWalls = collisionWalls
     // Tylko rzeczywiste ściany działowe widoczne w salach. Poprzednia lista
     // zawierała płaszczyzny w osiach muzeum, których w części miejsc nie ma.
@@ -826,6 +826,13 @@ const buildEarthquakeCracks = (elapsedTime) => {
 }
 
 const crackBatchVisibleToCamera = (batch) => {
+    // Te obiekty powstają dopiero podczas gry. Nie wykonujemy tu niczego
+    // zależnego od później inicjalizowanej kamery podczas startu modułu.
+    if (!earthquakeCrackFrustum) {
+        earthquakeCrackFrustum = new THREE.Frustum()
+        earthquakeCrackViewMatrix = new THREE.Matrix4()
+        earthquakeCrackSphere = new THREE.Sphere()
+    }
     camera.updateMatrixWorld()
     earthquakeCrackViewMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
     earthquakeCrackFrustum.setFromProjectionMatrix(earthquakeCrackViewMatrix)
