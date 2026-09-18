@@ -1696,12 +1696,29 @@ const setMobileNavigation = (active) => {
 }
 
 const requestMuseumControls = () => {
-    if (isTouchDevice) setMobileNavigation(true)
-    else canvas.requestPointerLock()
+    if (isTouchDevice) {
+        setMobileNavigation(true)
+        return
+    }
+    // Po dodaniu obiektów CSS3D kliknięcie przycisku pauzy może nie docierać
+    // bezpośrednio do canvasa. Żądaj blokady kursora z elementu renderującego
+    // muzeum i obsłuż ewentualne odrzucenie bez pozostawiania martwego panelu.
+    const lockTarget = canvas
+    const result = lockTarget.requestPointerLock()
+    if (result?.catch) {
+        result.catch(() => {
+            startPanel.classList.remove('hidden')
+            startPanel.classList.add('paused')
+        })
+    }
 }
-startButton.addEventListener('click', () => {
+startButton.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
     hasEnteredMuseum = true
     startAmbientMusic()
+    // Wywołanie bezpośrednio w zdarzeniu użytkownika zachowuje wymagany
+    // "user activation" przeglądarki dla Pointer Lock.
     requestMuseumControls()
 })
 canvas.addEventListener('click', () => {
