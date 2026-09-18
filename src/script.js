@@ -340,51 +340,661 @@ let specterTagVisibleUntil = 0
 const textureLoader = new THREE.TextureLoader()
 const cubeTextureLoader = new THREE.CubeTextureLoader()
 
-// Dodatkowe puste ramy ekspozycyjne na wolnych fragmentach ścian.
-const emptyFrameMaterial = new THREE.MeshStandardMaterial({
-    color: 0x3b2a20, roughness: 0.5, metalness: 0.08
+// Mały twórczy bałagan pozostawiony na podłodze po zajęciach z rysunku.
+const drawingMess = new THREE.Group()
+drawingMess.position.set(-10.35, 0.035, -0.4)
+scene.add(drawingMess)
+
+const paperGeometry = new THREE.PlaneGeometry(0.55, 0.78, 5, 7)
+const paperPositions = paperGeometry.attributes.position
+for (let index = 0; index < paperPositions.count; index++) {
+    const x = paperPositions.getX(index) / 0.275
+    const y = paperPositions.getY(index) / 0.39
+    paperPositions.setZ(index, (Math.pow(Math.abs(x), 5) + Math.pow(Math.abs(y), 6)) * 0.006)
+}
+paperGeometry.computeVertexNormals()
+
+const paperLayouts = [
+    [-1.42, -0.92, -0.71], [0.38, 0.84, 1.04], [-0.76, 1.48, 0.16], [1.36, -0.28, -1.12], [-0.18, -1.22, 0.55],
+    [0.94, 1.34, -0.42], [-1.55, 0.36, 1.18], [0.12, 0.08, -0.88], [1.48, 0.62, 0.36], [-0.92, -0.36, -0.18],
+    [0.74, -0.86, 0.94], [-0.36, 1.12, -1.24], [1.12, 0.18, 0.08], [-1.22, 1.02, 0.72], [0.24, -0.58, -0.28],
+    [-1.62, -0.18, 0.43]
+]
+
+const coverImages = [
+    '0_koty.jpg', '0_jedzenie-i-rosliny-600x861.jpg', '0_ptaki-i-inne-zwierzeta.jpg'
+]
+const patternImages = [
+    '01-psy-4-600x848.jpg', '05-czlowiek-13-600x849.jpg', '06-pojazdy-11-600x424.jpg'
+]
+const printedImages = [...coverImages, ...patternImages]
+
+paperLayouts.forEach(([x, z, rotation], index) => {
+    let material
+    if (index < 10) {
+        material = new THREE.MeshStandardMaterial({ color: 0xfffdf7, roughness: 0.92, side: THREE.DoubleSide })
+    } else {
+        const imageName = printedImages[index - 10]
+        const map = textureLoader.load(`/textures/drawing-mess-web/${imageName}`)
+        map.colorSpace = THREE.SRGBColorSpace
+        if (imageName === '06-pojazdy-11-600x424.jpg') {
+            map.center.set(0.5, 0.5)
+            map.rotation = Math.PI * 0.5
+        }
+        material = new THREE.MeshStandardMaterial({ map, color: 0xffffff, roughness: 0.88, side: THREE.DoubleSide })
+    }
+    const paper = new THREE.Mesh(paperGeometry, material)
+    paper.position.set(x, 0.008 + index * 0.0012, z)
+    paper.rotation.set(-Math.PI * 0.5, 0, rotation)
+    paper.castShadow = true
+    paper.receiveShadow = true
+    drawingMess.add(paper)
 })
-const emptyFrameInnerMaterial = new THREE.MeshStandardMaterial({
-    color: 0xf3efe3, roughness: 0.94
-})
-const createEmptyWallFrame = (x, y, z, rotationY, width = 1.25, height = 1.65) => {
-    const group = new THREE.Group()
-    const bar = 0.075
-    const depth = 0.055
-    const back = new THREE.Mesh(new THREE.PlaneGeometry(width - bar * 1.3, height - bar * 1.3), emptyFrameInnerMaterial)
-    back.position.z = -0.012
-    group.add(back)
-    const horizontal = new THREE.BoxGeometry(width, bar, depth)
-    const vertical = new THREE.BoxGeometry(bar, height - bar * 2, depth)
-    const top = new THREE.Mesh(horizontal, emptyFrameMaterial)
-    const bottom = new THREE.Mesh(horizontal, emptyFrameMaterial)
-    const left = new THREE.Mesh(vertical, emptyFrameMaterial)
-    const right = new THREE.Mesh(vertical, emptyFrameMaterial)
-    top.position.y = height * 0.5 - bar * 0.5
-    bottom.position.y = -height * 0.5 + bar * 0.5
-    left.position.x = -width * 0.5 + bar * 0.5
-    right.position.x = width * 0.5 - bar * 0.5
-    group.add(top, bottom, left, right)
-    group.position.set(x, y, z)
-    group.rotation.y = rotationY
-    group.traverse((object) => { if (object.isMesh) object.castShadow = true })
-    scene.add(group)
+
+const crayonColors = [0xef3e42, 0xff8a32, 0xffd83d, 0x54b948, 0x24b7b0, 0x3185e5, 0x7756c5, 0xd64da1, 0x7a4b2c, 0x20262c]
+const crayonBodyGeometry = new THREE.CylinderGeometry(0.026, 0.026, 0.42, 8)
+const crayonWoodGeometry = new THREE.ConeGeometry(0.026, 0.11, 8)
+const crayonLeadGeometry = new THREE.ConeGeometry(0.011, 0.045, 8)
+const crayonWoodMaterial = new THREE.MeshStandardMaterial({ color: 0xe8c38f, roughness: 0.82 })
+
+const createMagicCrayon = (colorIndex, scale = 1) => {
+    const crayon = new THREE.Group()
+    const color = crayonColors[colorIndex % crayonColors.length]
+    const bodyMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.62 })
+    const body = new THREE.Mesh(crayonBodyGeometry, bodyMaterial)
+    body.rotation.z = Math.PI * 0.5
+    const wood = new THREE.Mesh(crayonWoodGeometry, crayonWoodMaterial)
+    wood.position.x = 0.265
+    wood.rotation.z = -Math.PI * 0.5
+    const lead = new THREE.Mesh(crayonLeadGeometry, bodyMaterial)
+    lead.position.x = 0.34
+    lead.rotation.z = -Math.PI * 0.5
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: dustTexture,
+        color,
+        transparent: true,
+        opacity: 0.48,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+    }))
+    glow.scale.setScalar(0.32)
+    crayon.add(body, wood, lead, glow)
+    crayon.scale.setScalar(scale)
+    crayon.userData.glow = glow
+    crayon.traverse((part) => { if (part.isMesh) part.castShadow = true })
+    return crayon
 }
 
-// Ramy ustawione na rzeczywistych powierzchniach ścian, w wolnych polach
-// pomiędzy dotychczasowymi ekspozycjami.
-[
-    [-5.25, 2.55, -0.30, 0, 1.15, 1.55],
-    [5.25, 2.45, 0.30, Math.PI, 1.35, 1.75],
-    [-0.30, 2.65, -5.25, Math.PI * 0.5, 1.15, 1.65],
-    [0.30, 2.35, 5.25, -Math.PI * 0.5, 1.45, 1.55],
-    [-12.70, 2.55, 3.4, Math.PI * 0.5, 1.2, 1.7],
-    [12.70, 2.45, -3.5, -Math.PI * 0.5, 1.4, 1.6],
-    [3.5, 2.6, -12.70, 0, 1.3, 1.75],
-    [-3.6, 2.4, 12.70, Math.PI, 1.15, 1.5]
-].forEach((args) => createEmptyWallFrame(...args))
+const workshopMagicCrayons = []
+for (let index = 0; index < 10; index++) {
+    const crayon = createMagicCrayon(index, 0.5)
+    drawingMess.add(crayon)
+    workshopMagicCrayons.push({
+        object: crayon,
+        phase: index * Math.PI * 0.2,
+        radius: 0.62 + (index % 4) * 0.23
+    })
+}
 
+const roamingCrayonBases = [
+    [-11, 2.2, -10], [-4, 3.1, -12], [4, 2.5, -11], [11, 3.4, -8],
+    [-11, 3.5, 7], [-4, 2.4, 11], [4, 3.6, 10], [11, 2.2, 8],
+    [-10, 2.8, 2.5], [-3, 3.7, -3], [3, 2.2, 3.2], [10, 3.2, -1]
+]
+const roamingMagicCrayons = roamingCrayonBases.map(([x, y, z], index) => {
+    const crayon = createMagicCrayon(index + 2, 0.72)
+    crayon.position.set(x, y, z)
+    scene.add(crayon)
+    return { object: crayon, base: new THREE.Vector3(x, y, z), phase: index * 1.73 }
+})
 
+const updateMagicCrayons = (elapsedTime) => {
+    workshopMagicCrayons.forEach((crayon, index) => {
+        const angle = elapsedTime * (0.48 + (index % 3) * 0.08) + crayon.phase
+        crayon.object.position.set(
+            Math.cos(angle) * crayon.radius,
+            0.38 + Math.sin(elapsedTime * 1.7 + crayon.phase) * 0.16 + (index % 2) * 0.1,
+            Math.sin(angle) * crayon.radius * 0.72 + 0.18
+        )
+        crayon.object.rotation.set(Math.sin(angle * 1.4) * 0.45, -angle, Math.cos(angle * 1.8) * 0.35)
+        const pulse = 0.7 + Math.sin(elapsedTime * 4.6 + crayon.phase) * 0.3
+        crayon.object.userData.glow.material.opacity = 0.28 + pulse * 0.42
+        crayon.object.userData.glow.scale.setScalar(0.28 + pulse * 0.2)
+    })
+
+    roamingMagicCrayons.forEach((crayon, index) => {
+        const time = elapsedTime + crayon.phase
+        crayon.object.position.set(
+            crayon.base.x + Math.sin(time * 0.34) * 1.2,
+            crayon.base.y + Math.sin(time * 0.82) * 0.42,
+            crayon.base.z + Math.cos(time * 0.29) * 1.0
+        )
+        crayon.object.rotation.set(Math.sin(time * 0.7) * 0.8, time * 0.42, Math.cos(time * 0.53) * 0.65)
+        const flash = Math.pow(Math.max(0, Math.sin(time * 2.8)), 7)
+        crayon.object.userData.glow.material.opacity = 0.22 + flash * 0.78
+        crayon.object.userData.glow.scale.setScalar(0.34 + flash * 0.42)
+    })
+}
+/*
+const environmentMapTexture = cubeTextureLoader.load([
+    '/textures/environmentMaps/0/px.png',
+    '/textures/environmentMaps/0/nx.png',
+    '/textures/environmentMaps/0/py.png',
+    '/textures/environmentMaps/0/ny.png',
+    '/textures/environmentMaps/0/pz.png',
+    '/textures/environmentMaps/0/nz.png'
+])
+*/
+
+// Collision rectangles match the gallery walls. The visitor is represented
+// by a circle in plan, so movement stays stable and never bounces.
+const collisionWalls = [
+    { x: 0, z: 15, halfX: 30, halfZ: 1 },
+    { x: 0, z: -15, halfX: 30, halfZ: 1 },
+    { x: 15, z: 0, halfX: 1, halfZ: 30 },
+    { x: -15, z: 0, halfX: 1, halfZ: 30 },
+    { x: 7, z: 5, halfX: 5, halfZ: 0.25 },
+    { x: -7, z: 5, halfX: 5, halfZ: 0.25 },
+    { x: 7, z: -5, halfX: 5, halfZ: 0.25 },
+    { x: -7, z: -5, halfX: 5, halfZ: 0.25 },
+    { x: 0, z: -10, halfX: 3.5, halfZ: 0.25 },
+    { x: 0, z: 10, halfX: 3.5, halfZ: 0.25 },
+    { x: -7, z: 10, halfX: 0.25, halfZ: 3.5 },
+    { x: 7, z: 10, halfX: 0.25, halfZ: 3.5 },
+    { x: 7, z: 0, halfX: 0.25, halfZ: 3.5 },
+    { x: -7, z: 0, halfX: 0.25, halfZ: 3.5 },
+    { x: -7, z: -10, halfX: 0.25, halfZ: 3.5 },
+    { x: 7, z: -10, halfX: 0.25, halfZ: 3.5 }
+]
+
+// Pole 1 × 1 m po przeciwnej stronie muzeum uruchamia deszcz klocków.
+const blockTriggerPosition = new THREE.Vector3(10.35, 0.025, -0.4)
+const blockTriggerMaterial = new THREE.MeshStandardMaterial({
+    color: 0x4c2b78,
+    emissive: 0x8b54ff,
+    emissiveIntensity: 1.6,
+    transparent: true,
+    opacity: 0.74,
+    roughness: 0.28,
+    metalness: 0.25
+})
+const blockTrigger = new THREE.Mesh(new THREE.BoxGeometry(1, 0.035, 1), blockTriggerMaterial)
+blockTrigger.position.copy(blockTriggerPosition)
+scene.add(blockTrigger)
+const blockTriggerEdges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(blockTrigger.geometry),
+    new THREE.LineBasicMaterial({ color: 0xd8c6ff, transparent: true, opacity: 0.92 })
+)
+blockTrigger.add(blockTriggerEdges)
+
+const fallingBlocks = []
+const maxFallingBlocks = 42
+const blockRemovalFrustum = new THREE.Frustum()
+const blockRemovalMatrix = new THREE.Matrix4()
+const blockRemovalSphere = new THREE.Sphere()
+let lastTimedBlockRemovalAt = 50
+
+const blockIsOutsideVisitorView = (block) => {
+    // Pięciometrowa strefa ochronna pozwala usypywać trwałą górę
+    // klocków i zapobiega znikaniu elementu po krótkim odwróceniu wzroku.
+    const dx = camera.position.x - block.mesh.position.x
+    const dz = camera.position.z - block.mesh.position.z
+    if (Math.hypot(dx, dz) < 5) return false
+
+    camera.updateMatrixWorld()
+    blockRemovalMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    blockRemovalFrustum.setFromProjectionMatrix(blockRemovalMatrix)
+    blockRemovalSphere.center.copy(block.mesh.position)
+    blockRemovalSphere.radius = 0.88
+
+    // Mgła również zasłania obiekty, nawet jeśli geometrycznie są w kadrze.
+    const fogVisibilityDistance = THREE.MathUtils.lerp(50, 2.5, fogAmount)
+    if (camera.position.distanceTo(block.mesh.position) > fogVisibilityDistance) return true
+    return !blockRemovalFrustum.intersectsSphere(blockRemovalSphere)
+}
+
+const removeFallingBlock = (block) => {
+    const index = fallingBlocks.indexOf(block)
+    if (index === -1) return false
+    fallingBlocks.splice(index, 1)
+    scene.remove(block.mesh)
+    block.mesh.traverse((part) => {
+        part.geometry?.dispose()
+        if (Array.isArray(part.material)) part.material.forEach((material) => material.dispose())
+        else part.material?.dispose()
+    })
+    return true
+}
+
+const oldestInvisibleBlock = (minimumAge, elapsedTime) => fallingBlocks
+    .filter((block) => elapsedTime - block.spawnedAt >= minimumAge
+        && block.outsideVisitorView
+        && elapsedTime - block.lastVisibleAt >= 4)
+    .sort((a, b) => a.spawnedAt - b.spawnedAt)[0] || null
+
+const updateBlockCleanup = (elapsedTime) => {
+    // Stan widoczności aktualizujemy w każdej klatce. Klocek musi pozostawać
+    // niewidoczny przez co najmniej 4 sekundy, zanim stanie się kandydatem.
+    for (const block of fallingBlocks) {
+        block.outsideVisitorView = blockIsOutsideVisitorView(block)
+        if (!block.outsideVisitorView) block.lastVisibleAt = elapsedTime
+    }
+
+    // Limit wydajnościowy usuwa wyłącznie klocki niewidoczne. Jeżeli wszystkie
+    // są w kadrze, chwilowo tolerujemy nadmiar zamiast kasować coś na oczach gracza.
+    while (fallingBlocks.length > maxFallingBlocks) {
+        const candidate = oldestInvisibleBlock(0, elapsedTime)
+        if (!candidate) break
+        removeFallingBlock(candidate)
+    }
+
+    // Po osiągnięciu wieku jednej minuty znika najwyżej jeden niewidoczny
+    // klocek na 3 sekundy. Świeże klocki z kolejnego deszczu zachowują pełną minutę.
+    if (elapsedTime - lastTimedBlockRemovalAt >= 3) {
+        const candidate = oldestInvisibleBlock(60, elapsedTime)
+        if (candidate && removeFallingBlock(candidate)) lastTimedBlockRemovalAt = elapsedTime
+    }
+}
+
+let blockTriggerOccupied = false
+let blockRainCount = 0
+const blockColors = [0xff4d61, 0xffa62b, 0xffdf4d, 0x5bd46d, 0x46c7e8, 0x4f78ff, 0x9d5cff, 0xf05bc3]
+const blockSpawnPoints = [
+    [-11.5, -11], [-8.8, -7.5], [-11.2, -2.5], [-10.2, 3.8], [-11.4, 9.2],
+    [-4.8, -12], [0, -12.2], [4.8, -12], [-4.2, -7.3], [0, -7.4], [4.3, -7.2],
+    [-4.5, -2.5], [0, -3.4], [4.4, -2.4], [-4.3, 3.1], [0, 3.4], [4.4, 3.0],
+    [9.5, -9], [11.1, -4.4], [10.4, 4.2], [11.2, 9.3]
+]
+
+const startBlockRain = (elapsedTime) => {
+    blockRainCount++
+
+    blockSpawnPoints.forEach(([x, z], index) => {
+        const material = new THREE.MeshStandardMaterial({
+            color: blockColors[index % blockColors.length],
+            roughness: 0.44,
+            metalness: 0.12,
+            emissive: blockColors[index % blockColors.length],
+            emissiveIntensity: 0.08
+        })
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material)
+        const offset = ((blockRainCount + index) % 3 - 1) * 0.16
+        mesh.position.set(x + offset, 6.5 + (index % 6) * 1.15, z - offset)
+        mesh.rotation.y = (index * 0.71) % Math.PI
+        mesh.castShadow = true
+        mesh.receiveShadow = true
+        const edges = new THREE.LineSegments(
+            new THREE.EdgesGeometry(mesh.geometry),
+            new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.28 })
+        )
+        mesh.add(edges)
+        scene.add(mesh)
+        fallingBlocks.push({
+            mesh,
+            spawnedAt: elapsedTime,
+            lastVisibleAt: elapsedTime,
+            outsideVisitorView: false,
+            velocity: new THREE.Vector3((index % 3 - 1) * 0.18, -0.3, ((index + 1) % 3 - 1) * 0.16),
+            settled: false,
+            floating: false,
+            floatPhase: index * 1.93 + blockRainCount * 0.71,
+            angularVelocity: new THREE.Vector3(
+                THREE.MathUtils.randFloatSpread(0.45),
+                THREE.MathUtils.randFloatSpread(0.3),
+                THREE.MathUtils.randFloatSpread(0.45)
+            )
+        })
+    })
+}
+
+const createEffectPad = (x, z, color, emissive) => {
+    const material = new THREE.MeshStandardMaterial({
+        color,
+        emissive,
+        emissiveIntensity: 1.3,
+        transparent: true,
+        opacity: 0.76,
+        roughness: 0.25,
+        metalness: 0.3
+    })
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 0.035, 1), material)
+    mesh.position.set(x, 0.025, z)
+    const edges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(mesh.geometry),
+        new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.78 })
+    )
+    mesh.add(edges)
+    scene.add(mesh)
+    return { mesh, material, position: mesh.position.clone(), occupied: false }
+}
+
+const alarmPad = createEffectPad(-12.15, 7.7, 0x671c22, 0xff2638)
+const discoPad = createEffectPad(12.15, 7.7, 0x163c68, 0x35d9ff)
+const antPad = createEffectPad(0, 7.7, 0x241b12, 0xff9d35)
+const fogPad = createEffectPad(0, -7.7, 0x4b555c, 0xd8f3ff)
+const waterPad = createEffectPad(-12.15, -7.7, 0x315b61, 0x74d8df)
+const earthquakePad = createEffectPad(12.15, -7.7, 0x5a3a24, 0xff8a42)
+
+// Dziesięciosekundowe trzęsienie ziemi: narasta od lekkich drgań do silnych.
+// Rysy są rysowane w lokalnej płaszczyźnie każdej ściany, dzięki czemu nie
+// mogą „wisieć” w przestrzeni.
+let earthquakeStartedAt = null
+let earthquakeVisualOffsetX = 0
+let earthquakeVisualOffsetY = 0
+let earthquakeVisualOffsetZ = 0
+const earthquakeDuration = 20
+let earthquakeShakeStrength = 0
+const earthquakeCracks = []
+const earthquakeCrackBatches = []
+let earthquakeRun = 0
+const earthquakeCrackFrustum = new THREE.Frustum()
+const earthquakeCrackViewMatrix = new THREE.Matrix4()
+const earthquakeCrackSphere = new THREE.Sphere()
+const crackWalls = collisionWalls
+    // Tylko rzeczywiste ściany działowe widoczne w salach. Poprzednia lista
+    // zawierała płaszczyzny w osiach muzeum, których w części miejsc nie ma.
+    .filter((wall) => wall.halfX <= 5 && wall.halfZ <= 5)
+    .flatMap((wall) => {
+        if (wall.halfX > wall.halfZ) {
+            const min = wall.x - wall.halfX + 0.45
+            const max = wall.x + wall.halfX - 0.45
+            if (max <= min) return []
+            return [-1, 1].map((normal) => ({
+                axis: 'z',
+                face: wall.z + normal * wall.halfZ,
+                normal,
+                along: [min, max],
+                y: [0.45, 4.35]
+            }))
+        }
+        const min = wall.z - wall.halfZ + 0.45
+        const max = wall.z + wall.halfZ - 0.45
+        if (max <= min) return []
+        return [-1, 1].map((normal) => ({
+            axis: 'x',
+            face: wall.x + normal * wall.halfX,
+            normal,
+            along: [min, max],
+            y: [0.45, 4.35]
+        }))
+    })
+
+const addCrackStroke = (group, points, reveal, opacity = 0.92) => {
+    const geometry = new THREE.BufferGeometry().setFromPoints(points)
+    const material = new THREE.LineBasicMaterial({
+        color: 0x20140f,
+        transparent: true,
+        opacity: 0,
+        depthTest: true,
+        depthWrite: false
+    })
+    const line = new THREE.Line(geometry, material)
+    line.visible = false
+    line.renderOrder = 8
+    group.add(line)
+    earthquakeCracks.push({ line, material, reveal, opacity })
+    return line
+}
+
+const buildEarthquakeCracks = (elapsedTime) => {
+    earthquakeRun++
+    const batch = { groups: [], strokes: [], bornAt: elapsedTime, finishedAt: null }
+
+    // Dziesięć sylwetek pęknięć. Parametry zmieniają kierunek, długość,
+    // zagęszczenie zygzaka oraz układ odnóg, więc ściany nie wyglądają jak
+    // pokryte kopiami tego samego wzoru.
+    const crackTypes = [
+        { lean: 0.02, sway: 0.10, rise: 0.22, joints: [4, 8], sides: [1, -1] },
+        { lean: -0.035, sway: 0.16, rise: 0.18, joints: [3, 6, 9], sides: [-1, 1, -1] },
+        { lean: 0.055, sway: 0.07, rise: 0.25, joints: [5], sides: [1] },
+        { lean: -0.015, sway: 0.22, rise: 0.17, joints: [2, 7], sides: [1, 1] },
+        { lean: 0.075, sway: 0.12, rise: 0.19, joints: [4, 6, 9], sides: [-1, 1, 1] },
+        { lean: -0.065, sway: 0.09, rise: 0.23, joints: [3, 8], sides: [-1, 1] },
+        { lean: 0.0, sway: 0.19, rise: 0.20, joints: [2, 5, 8], sides: [1, -1, 1] },
+        { lean: 0.04, sway: 0.14, rise: 0.16, joints: [4, 7, 10], sides: [-1, -1, 1] },
+        { lean: -0.045, sway: 0.11, rise: 0.27, joints: [6], sides: [1] },
+        { lean: 0.025, sway: 0.24, rise: 0.15, joints: [3, 5, 9], sides: [-1, 1, -1] }
+    ]
+
+    // Mniej pęknięć: wybieramy tylko część powierzchni, ale każde pęknięcie
+    // jest większe, bardziej rozgałęzione i ma mocniejszą sylwetkę.
+    const spectacularWalls = crackWalls.filter((wall, index) =>
+        (index + earthquakeRun * 2) % 3 === 0
+    )
+    spectacularWalls.forEach((wall, wallIndex) => {
+        const group = new THREE.Group()
+        const surfaceOffset = wall.normal * 0.008
+        if (wall.axis === 'z') {
+            group.position.set(0, 0, wall.face + surfaceOffset)
+            group.rotation.y = wall.normal < 0 ? Math.PI : 0
+        } else {
+            group.position.set(wall.face + surfaceOffset, 0, 0)
+            group.rotation.y = wall.normal < 0 ? -Math.PI / 2 : Math.PI / 2
+        }
+        scene.add(group)
+        batch.groups.push(group)
+
+        for (let crackIndex = 0; crackIndex < 1; crackIndex++) {
+            const typeIndex = (wallIndex * 3 + earthquakeRun * 7 + crackIndex * 7) % crackTypes.length
+            const type = crackTypes[typeIndex]
+            const seed = (wallIndex + 1) * 17 + crackIndex * 11 + typeIndex * 5 + earthquakeRun * 31
+            const baseAlong = THREE.MathUtils.lerp(wall.along[0], wall.along[1], 0.46 + 0.08 * Math.sin(wallIndex * 1.7))
+            const baseY = THREE.MathUtils.lerp(wall.y[0], wall.y[1], 0.12 + ((wallIndex + typeIndex) % 4) * 0.08)
+            const segmentCount = 15 + (typeIndex % 5)
+            const main = [new THREE.Vector3(baseAlong, baseY, 0)]
+            let x = baseAlong
+            let y = baseY
+
+            for (let segment = 1; segment <= segmentCount; segment++) {
+                const irregular = Math.sin(seed * 0.71 + segment * (1.31 + typeIndex * 0.07))
+                    + 0.52 * Math.sin(seed * 0.29 + segment * (2.73 + typeIndex * 0.04))
+                x += type.lean + irregular * type.sway
+                y += type.rise * 1.12 * (0.82 + 0.18 * Math.sin(seed + segment * 1.37))
+                main.push(new THREE.Vector3(x, y, 0))
+            }
+
+            const revealBase = wallIndex / Math.max(1, spectacularWalls.length)
+            const mainLine = addCrackStroke(group, main, revealBase, 1.0)
+            batch.strokes.push(earthquakeCracks[earthquakeCracks.length - 1])
+
+            const spectacularJoints = Array.from(new Set([
+                ...type.joints,
+                Math.floor(segmentCount * 0.28),
+                Math.floor(segmentCount * 0.52),
+                Math.floor(segmentCount * 0.76)
+            ])).sort((a, b) => a - b)
+            spectacularJoints.forEach((rawJoint, branchIndex) => {
+                const joint = Math.min(rawJoint, main.length - 2)
+                const origin = main[joint]
+                const side = type.sides[branchIndex % type.sides.length]
+                const branch = [origin.clone()]
+                let bx = origin.x
+                let by = origin.y
+                const branchSegments = 4 + ((typeIndex + branchIndex) % 4)
+                for (let segment = 1; segment <= branchSegments; segment++) {
+                    bx += side * (0.12 + type.sway * 0.42 + 0.04 * Math.sin(seed + branchIndex * 2.1 + segment))
+                    by += (typeIndex % 2 ? 0.06 : 0.10) + 0.03 * Math.sin(seed * 0.5 + segment * 2.4)
+                    branch.push(new THREE.Vector3(bx, by, 0))
+                }
+                addCrackStroke(group, branch, revealBase + 0.018 + branchIndex * 0.010, 0.82)
+                batch.strokes.push(earthquakeCracks[earthquakeCracks.length - 1])
+            })
+        }
+    })
+    earthquakeCrackBatches.push(batch)
+    return batch
+}
+
+const crackBatchVisibleToCamera = (batch) => {
+    camera.updateMatrixWorld()
+    earthquakeCrackViewMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    earthquakeCrackFrustum.setFromProjectionMatrix(earthquakeCrackViewMatrix)
+    for (const group of batch.groups) {
+        const world = group.getWorldPosition(earthquakeCrackSphere.center)
+        earthquakeCrackSphere.center.set(world.x, 2.4, world.z)
+        earthquakeCrackSphere.radius = 2.8
+        if (earthquakeCrackFrustum.intersectsSphere(earthquakeCrackSphere)) return true
+    }
+    return false
+}
+
+const cleanupEarthquakeCracks = (elapsedTime) => {
+    for (let i = earthquakeCrackBatches.length - 1; i >= 0; i--) {
+        const batch = earthquakeCrackBatches[i]
+        if (batch.finishedAt === null || elapsedTime - batch.finishedAt < 60) continue
+        if (crackBatchVisibleToCamera(batch)) continue
+        batch.groups.forEach((group) => {
+            group.traverse((object) => {
+                if (object.geometry) object.geometry.dispose()
+                if (object.material) object.material.dispose()
+            })
+            scene.remove(group)
+        })
+        batch.strokes.forEach((stroke) => {
+            const index = earthquakeCracks.indexOf(stroke)
+            if (index >= 0) earthquakeCracks.splice(index, 1)
+        })
+        earthquakeCrackBatches.splice(i, 1)
+    }
+}
+
+const startEarthquake = (elapsedTime) => {
+    const batch = buildEarthquakeCracks(elapsedTime)
+    earthquakeStartedAt = elapsedTime
+    // Starsze rysy zostają na ścianach; podczas kolejnego trzęsienia ujawnia
+    // się wyłącznie nowa partia pęknięć.
+    batch.strokes.forEach(({ line, material }) => {
+        line.visible = false
+        material.opacity = 0
+    })
+}
+
+const updateEarthquake = (deltaTime, elapsedTime) => {
+    const navigationActive = isTouchDevice ? mobileControlsActive : document.pointerLockElement === canvas
+    const onPad = Math.abs(camera.position.x - earthquakePad.position.x) <= 0.5
+        && Math.abs(camera.position.z - earthquakePad.position.z) <= 0.5
+    if (navigationActive && onPad && !earthquakePad.occupied && earthquakeStartedAt === null) startEarthquake(elapsedTime)
+    earthquakePad.occupied = onPad
+
+    const padPulse = 1.15 + Math.sin(elapsedTime * 3.4) * 0.35
+    earthquakePad.material.emissiveIntensity = earthquakeStartedAt === null ? padPulse : 3.4
+    earthquakePad.material.color.setHex(earthquakeStartedAt === null ? 0x5a3a24 : 0xa84324)
+    cleanupEarthquakeCracks(elapsedTime)
+    if (earthquakeStartedAt === null) return
+
+    const progress = THREE.MathUtils.clamp((elapsedTime - earthquakeStartedAt) / earthquakeDuration, 0, 1)
+    const strength = THREE.MathUtils.smoothstep(progress, 0, 1)
+    const shake = strength * strength
+    earthquakeShakeStrength = shake
+
+    // Mocniejsze, wieloczęstotliwościowe drgania. Składowe o różnych
+    // częstotliwościach ograniczają wrażenie regularnego kołysania kamery.
+    const lateralX = (
+        Math.sin(elapsedTime * 29.0)
+        + Math.sin(elapsedTime * 47.3) * 0.62
+        + Math.sin(elapsedTime * 71.7) * 0.24
+    ) * 0.058 * shake
+    const lateralZ = (
+        Math.sin(elapsedTime * 33.7 + 1.1)
+        + Math.sin(elapsedTime * 54.9) * 0.48
+    ) * 0.040 * shake
+    const vertical = (
+        Math.sin(elapsedTime * 38.7)
+        + Math.sin(elapsedTime * 61.1) * 0.38
+    ) * 0.023 * shake
+    const roll = (
+        Math.sin(elapsedTime * 24.5)
+        + Math.sin(elapsedTime * 41.2) * 0.45
+    ) * 0.016 * shake
+
+    // Drganie jest tylko przesunięciem wizualnym kamery. Najpierw cofamy offset
+    // z poprzedniej klatki, a potem nakładamy nowy. Dzięki temu kamera nie
+    // dryfuje przez ściany i po wstrząsie pozostaje w poprawnej pozycji.
+    camera.position.x -= earthquakeVisualOffsetX
+    camera.position.y -= earthquakeVisualOffsetY
+    camera.position.z -= earthquakeVisualOffsetZ
+    earthquakeVisualOffsetX = lateralX
+    earthquakeVisualOffsetY = vertical
+    earthquakeVisualOffsetZ = lateralZ
+    camera.position.x += earthquakeVisualOffsetX
+    camera.position.y += earthquakeVisualOffsetY
+    camera.position.z += earthquakeVisualOffsetZ
+    camera.rotation.z = roll
+
+    // Pęknięcia rozwijają się dopiero w końcowej fazie wstrząsu.
+    const crackProgress = THREE.MathUtils.clamp((progress - 0.68) / 0.32, 0, 1)
+    const activeBatch = earthquakeCrackBatches[earthquakeCrackBatches.length - 1]
+    activeBatch?.strokes.forEach(({ line, material, reveal, opacity }) => {
+        const local = THREE.MathUtils.clamp((crackProgress - reveal * 0.66) / 0.34, 0, 1)
+        line.visible = local > 0
+        material.opacity = THREE.MathUtils.smoothstep(local, 0, 1) * opacity
+    })
+
+    if (progress >= 1) {
+        // Usuń ostatni offset trzęsienia. Bez tego kamera mogłaby zakończyć
+        // efekt wewnątrz kolizji ściany i blokować dalsze chodzenie.
+        camera.position.x -= earthquakeVisualOffsetX
+        camera.position.y -= earthquakeVisualOffsetY
+        camera.position.z -= earthquakeVisualOffsetZ
+        earthquakeVisualOffsetX = 0
+        earthquakeVisualOffsetY = 0
+        earthquakeVisualOffsetZ = 0
+        if (activeBatch && activeBatch.finishedAt === null) activeBatch.finishedAt = elapsedTime
+        earthquakeStartedAt = null
+        earthquakeShakeStrength = 0
+        camera.rotation.z = 0
+    }
+}
+let lightingMode = 'normal'
+
+// FogExp2 nie ma widocznej granicy początku mgły. Gęstość narasta
+// równomiernie w całej przestrzeni, zamiast kurczyć pole widzenia jak tunel.
+const fogColor = new THREE.Color(0xc9d0d4)
+const fogDenseDensity = 0.65
+scene.fog = new THREE.FogExp2(fogColor, 0)
+let fogActive = false
+let fogAmount = 0
+
+// Miękkie pasma mgły zaczynają pod sufitem i podczas włączania powoli
+// opadają. To tylko subtelna warstwa ruchu; właściwe zamglenie daje FogExp2.
+const fogCloudCanvas = document.createElement('canvas')
+fogCloudCanvas.width = fogCloudCanvas.height = 128
+const fogCloudContext = fogCloudCanvas.getContext('2d')
+const fogCloudGradient = fogCloudContext.createRadialGradient(64, 64, 5, 64, 64, 64)
+fogCloudGradient.addColorStop(0, 'rgba(235,242,245,0.32)')
+fogCloudGradient.addColorStop(0.42, 'rgba(220,230,234,0.18)')
+fogCloudGradient.addColorStop(1, 'rgba(205,216,221,0)')
+fogCloudContext.fillStyle = fogCloudGradient
+fogCloudContext.fillRect(0, 0, 128, 128)
+const fogCloudTexture = new THREE.CanvasTexture(fogCloudCanvas)
+const fogClouds = []
+const fogCloudCount = isTouchDevice ? 48 : 82
+for (let index = 0; index < fogCloudCount; index++) {
+    const material = new THREE.SpriteMaterial({
+        map: fogCloudTexture,
+        color: 0xe1e8eb,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        fog: true
+    })
+    const sprite = new THREE.Sprite(material)
+    sprite.position.set(
+        THREE.MathUtils.randFloat(-13.5, 13.5),
+        THREE.MathUtils.randFloat(5.5, 6.4),
+        THREE.MathUtils.randFloat(-13.5, 13.5)
+    )
+    const scale = THREE.MathUtils.randFloat(3.8, 7.2)
+    sprite.scale.set(scale, scale * THREE.MathUtils.randFloat(0.45, 0.75), 1)
+    scene.add(sprite)
+    fogClouds.push({
+        sprite,
+        startY: sprite.position.y,
+        phase: THREE.MathUtils.randFloat(0, 0.78),
+        drift: THREE.MathUtils.randFloat(0.05, 0.16),
+        direction: Math.random() * Math.PI * 2
+    })
+}
 
 /**
  * Ant colony
@@ -1698,32 +2308,12 @@ const setMobileNavigation = (active) => {
 }
 
 const requestMuseumControls = () => {
-    if (isTouchDevice) {
-        setMobileNavigation(true)
-        return
-    }
-    // Po dodaniu obiektów CSS3D kliknięcie przycisku pauzy może nie docierać
-    // bezpośrednio do canvasa. Żądaj blokady kursora z elementu renderującego
-    // muzeum i obsłuż ewentualne odrzucenie bez pozostawiania martwego panelu.
-    const lockTarget = canvas
-    // requestPointerLock() historycznie zwraca void. W części przeglądarek
-    // nowsza implementacja zwraca Promise, dlatego nie wolno odwoływać się
-    // bezpośrednio do result?.catch, gdy result jest undefined.
-    const result = lockTarget.requestPointerLock()
-    if (result && typeof result.catch === 'function') {
-        result.catch(() => {
-            startPanel.classList.remove('hidden')
-            startPanel.classList.add('paused')
-        })
-    }
+    if (isTouchDevice) setMobileNavigation(true)
+    else canvas.requestPointerLock()
 }
-startButton.addEventListener('click', (event) => {
-    event.preventDefault()
-    event.stopPropagation()
+startButton.addEventListener('click', () => {
     hasEnteredMuseum = true
     startAmbientMusic()
-    // Wywołanie bezpośrednio w zdarzeniu użytkownika zachowuje wymagany
-    // "user activation" przeglądarki dla Pointer Lock.
     requestMuseumControls()
 })
 canvas.addEventListener('click', () => {
@@ -2301,8 +2891,8 @@ const updateDust = (deltaTime, elapsedTime) => {
 
 const updateChildrenAmbience = () => {
     if (!audioContext || !childrenAmbienceGain) return
-    const dx = camera.position.x + 10.35
-    const dz = camera.position.z + 0.4
+    const dx = camera.position.x - drawingMess.position.x
+    const dz = camera.position.z - drawingMess.position.z
     const distance = Math.hypot(dx, dz)
     const proximity = 1 - THREE.MathUtils.clamp((distance - 1.2) / 9, 0, 1)
     const targetVolume = proximity * proximity * 0.075
@@ -2461,6 +3051,7 @@ const tick = () =>
     updateChildrenAmbience()
     updateDust(deltaTime, elapsedTime)
     updateSpecter(elapsedTime)
+    updateMagicCrayons(elapsedTime)
     updateVideoScreens(elapsedTime)
     updateFlood(deltaTime, elapsedTime)
     updateAnts(deltaTime, elapsedTime)
