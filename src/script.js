@@ -679,6 +679,9 @@ const earthquakePad = createEffectPad(12.15, -7.7, 0x5a3a24, 0xff8a42)
 // Rysy są rysowane w lokalnej płaszczyźnie każdej ściany, dzięki czemu nie
 // mogą „wisieć” w przestrzeni.
 let earthquakeStartedAt = null
+let earthquakeVisualOffsetX = 0
+let earthquakeVisualOffsetY = 0
+let earthquakeVisualOffsetZ = 0
 const earthquakeDuration = 10
 const earthquakeCracks = []
 const crackWalls = [
@@ -807,9 +810,18 @@ const updateEarthquake = (deltaTime, elapsedTime) => {
         + Math.sin(elapsedTime * 41.2) * 0.45
     ) * 0.016 * shake
 
-    camera.position.x += lateralX
-    camera.position.z += lateralZ
-    camera.position.y += vertical
+    // Drganie jest tylko przesunięciem wizualnym kamery. Najpierw cofamy offset
+    // z poprzedniej klatki, a potem nakładamy nowy. Dzięki temu kamera nie
+    // dryfuje przez ściany i po wstrząsie pozostaje w poprawnej pozycji.
+    camera.position.x -= earthquakeVisualOffsetX
+    camera.position.y -= earthquakeVisualOffsetY
+    camera.position.z -= earthquakeVisualOffsetZ
+    earthquakeVisualOffsetX = lateralX
+    earthquakeVisualOffsetY = vertical
+    earthquakeVisualOffsetZ = lateralZ
+    camera.position.x += earthquakeVisualOffsetX
+    camera.position.y += earthquakeVisualOffsetY
+    camera.position.z += earthquakeVisualOffsetZ
     camera.rotation.z = roll
 
     // Pęknięcia rozwijają się dopiero w końcowej fazie wstrząsu.
@@ -821,6 +833,14 @@ const updateEarthquake = (deltaTime, elapsedTime) => {
     })
 
     if (progress >= 1) {
+        // Usuń ostatni offset trzęsienia. Bez tego kamera mogłaby zakończyć
+        // efekt wewnątrz kolizji ściany i blokować dalsze chodzenie.
+        camera.position.x -= earthquakeVisualOffsetX
+        camera.position.y -= earthquakeVisualOffsetY
+        camera.position.z -= earthquakeVisualOffsetZ
+        earthquakeVisualOffsetX = 0
+        earthquakeVisualOffsetY = 0
+        earthquakeVisualOffsetZ = 0
         earthquakeStartedAt = null
         camera.rotation.z = 0
     }
