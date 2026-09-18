@@ -685,6 +685,11 @@ let earthquakeVisualOffsetZ = 0
 const earthquakeDuration = 20
 let earthquakeShakeStrength = 0
 const earthquakeCracks = []
+const earthquakeCrackBatches = []
+let earthquakeRun = 0
+const earthquakeCrackFrustum = new THREE.Frustum()
+const earthquakeCrackViewMatrix = new THREE.Matrix4()
+const earthquakeCrackSphere = new THREE.Sphere()
 const crackWalls = collisionWalls
     // Tylko rzeczywiste ściany działowe widoczne w salach. Poprzednia lista
     // zawierała płaszczyzny w osiach muzeum, których w części miejsc nie ma.
@@ -728,10 +733,12 @@ const addCrackStroke = (group, points, reveal, opacity = 0.92) => {
     line.renderOrder = 8
     group.add(line)
     earthquakeCracks.push({ line, material, reveal, opacity })
+    return line
 }
 
-const buildEarthquakeCracks = () => {
-    if (earthquakeCracks.length) return
+const buildEarthquakeCracks = (elapsedTime) => {
+    earthquakeRun++
+    const batch = { groups: [], strokes: [], bornAt: elapsedTime, finishedAt: null }
 
     // Dziesięć sylwetek pęknięć. Parametry zmieniają kierunek, długość,
     // zagęszczenie zygzaka oraz układ odnóg, więc ściany nie wyglądają jak
@@ -751,7 +758,9 @@ const buildEarthquakeCracks = () => {
 
     // Mniej pęknięć: wybieramy tylko część powierzchni, ale każde pęknięcie
     // jest większe, bardziej rozgałęzione i ma mocniejszą sylwetkę.
-    const spectacularWalls = crackWalls.filter((wall, index) => index % 3 === 0)
+    const spectacularWalls = crackWalls.filter((wall, index) =>
+        (index + earthquakeRun * 2) % 3 === 0
+    )
     spectacularWalls.forEach((wall, wallIndex) => {
         const group = new THREE.Group()
         const surfaceOffset = wall.normal * 0.008
@@ -763,11 +772,12 @@ const buildEarthquakeCracks = () => {
             group.rotation.y = wall.normal < 0 ? -Math.PI / 2 : Math.PI / 2
         }
         scene.add(group)
+        batch.groups.push(group)
 
         for (let crackIndex = 0; crackIndex < 1; crackIndex++) {
-            const typeIndex = (wallIndex * 3 + crackIndex * 7) % crackTypes.length
+            const typeIndex = (wallIndex * 3 + earthquakeRun * 7 + crackIndex * 7) % crackTypes.length
             const type = crackTypes[typeIndex]
-            const seed = (wallIndex + 1) * 17 + crackIndex * 11 + typeIndex * 5
+            const seed = (wallIndex + 1) * 17 + crackIndex * 11 + typeIndex * 5 + earthquakeRun * 31
             const baseAlong = THREE.MathUtils.lerp(wall.along[0], wall.along[1], 0.46 + 0.08 * Math.sin(wallIndex * 1.7))
             const baseY = THREE.MathUtils.lerp(wall.y[0], wall.y[1], 0.12 + ((wallIndex + typeIndex) % 4) * 0.08)
             const segmentCount = 15 + (typeIndex % 5)
@@ -784,7 +794,8 @@ const buildEarthquakeCracks = () => {
             }
 
             const revealBase = wallIndex / Math.max(1, spectacularWalls.length)
-            addCrackStroke(group, main, revealBase, 1.0)
+            const mainLine = addCrackStroke(group, main, revealBase, 1.0)
+            batch.strokes.push(earthquakeCracks[earthquakeCracks.length - 1])
 
             const spectacularJoints = Array.from(new Set([
                 ...type.joints,
@@ -806,15 +817,53 @@ const buildEarthquakeCracks = () => {
                     branch.push(new THREE.Vector3(bx, by, 0))
                 }
                 addCrackStroke(group, branch, revealBase + 0.018 + branchIndex * 0.010, 0.82)
+                batch.strokes.push(earthquakeCracks[earthquakeCracks.length - 1])
             })
         }
     })
+    earthquakeCrackBatches.push(batch)
+    return batch
+}
+
+const crackBatchVisibleToCamera = (batch) => {
+    camera.updateMatrixWorld()
+    earthquakeCrackViewMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    earthquakeCrackFrustum.setFromProjectionMatrix(earthquakeCrackViewMatrix)
+    for (const group of batch.groups) {
+        const world = group.getWorldPosition(earthquakeCrackSphere.center)
+        earthquakeCrackSphere.center.set(world.x, 2.4, world.z)
+        earthquakeCrackSphere.radius = 2.8
+        if (earthquakeCrackFrustum.intersectsSphere(earthquakeCrackSphere)) return true
+    }
+    return false
+}
+
+const cleanupEarthquakeCracks = (elapsedTime) => {
+    for (let i = earthquakeCrackBatches.length - 1; i >= 0; i--) {
+        const batch = earthquakeCrackBatches[i]
+        if (batch.finishedAt === null || elapsedTime - batch.finishedAt < 60) continue
+        if (crackBatchVisibleToCamera(batch)) continue
+        batch.groups.forEach((group) => {
+            group.traverse((object) => {
+                if (object.geometry) object.geometry.dispose()
+                if (object.material) object.material.dispose()
+            })
+            scene.remove(group)
+        })
+        batch.strokes.forEach((stroke) => {
+            const index = earthquakeCracks.indexOf(stroke)
+            if (index >= 0) earthquakeCracks.splice(index, 1)
+        })
+        earthquakeCrackBatches.splice(i, 1)
+    }
 }
 
 const startEarthquake = (elapsedTime) => {
-    buildEarthquakeCracks()
+    const batch = buildEarthquakeCracks(elapsedTime)
     earthquakeStartedAt = elapsedTime
-    earthquakeCracks.forEach(({ line, material }) => {
+    // Starsze rysy zostają na ścianach; podczas kolejnego trzęsienia ujawnia
+    // się wyłącznie nowa partia pęknięć.
+    batch.strokes.forEach(({ line, material }) => {
         line.visible = false
         material.opacity = 0
     })
@@ -830,6 +879,7 @@ const updateEarthquake = (deltaTime, elapsedTime) => {
     const padPulse = 1.15 + Math.sin(elapsedTime * 3.4) * 0.35
     earthquakePad.material.emissiveIntensity = earthquakeStartedAt === null ? padPulse : 3.4
     earthquakePad.material.color.setHex(earthquakeStartedAt === null ? 0x5a3a24 : 0xa84324)
+    cleanupEarthquakeCracks(elapsedTime)
     if (earthquakeStartedAt === null) return
 
     const progress = THREE.MathUtils.clamp((elapsedTime - earthquakeStartedAt) / earthquakeDuration, 0, 1)
@@ -873,7 +923,8 @@ const updateEarthquake = (deltaTime, elapsedTime) => {
 
     // Pęknięcia rozwijają się dopiero w końcowej fazie wstrząsu.
     const crackProgress = THREE.MathUtils.clamp((progress - 0.68) / 0.32, 0, 1)
-    earthquakeCracks.forEach(({ line, material, reveal, opacity }) => {
+    const activeBatch = earthquakeCrackBatches[earthquakeCrackBatches.length - 1]
+    activeBatch?.strokes.forEach(({ line, material, reveal, opacity }) => {
         const local = THREE.MathUtils.clamp((crackProgress - reveal * 0.66) / 0.34, 0, 1)
         line.visible = local > 0
         material.opacity = THREE.MathUtils.smoothstep(local, 0, 1) * opacity
@@ -888,6 +939,7 @@ const updateEarthquake = (deltaTime, elapsedTime) => {
         earthquakeVisualOffsetX = 0
         earthquakeVisualOffsetY = 0
         earthquakeVisualOffsetZ = 0
+        if (activeBatch && activeBatch.finishedAt === null) activeBatch.finishedAt = elapsedTime
         earthquakeStartedAt = null
         earthquakeShakeStrength = 0
         camera.rotation.z = 0
