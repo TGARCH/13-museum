@@ -1704,8 +1704,11 @@ const requestMuseumControls = () => {
     // bezpośrednio do canvasa. Żądaj blokady kursora z elementu renderującego
     // muzeum i obsłuż ewentualne odrzucenie bez pozostawiania martwego panelu.
     const lockTarget = canvas
+    // requestPointerLock() historycznie zwraca void. W części przeglądarek
+    // nowsza implementacja zwraca Promise, dlatego nie wolno odwoływać się
+    // bezpośrednio do result?.catch, gdy result jest undefined.
     const result = lockTarget.requestPointerLock()
-    if (result?.catch) {
+    if (result && typeof result.catch === 'function') {
         result.catch(() => {
             startPanel.classList.remove('hidden')
             startPanel.classList.add('paused')
