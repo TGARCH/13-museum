@@ -384,6 +384,8 @@ const createEmptyWallFrame = (x, y, z, rotationY, width = 1.25, height = 1.65) =
     [-3.6, 2.4, 12.70, Math.PI, 1.15, 1.5]
 ].forEach((args) => createEmptyWallFrame(...args))
 
+
+
 /**
  * Ant colony
  */
