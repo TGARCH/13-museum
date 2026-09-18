@@ -682,7 +682,8 @@ let earthquakeStartedAt = null
 let earthquakeVisualOffsetX = 0
 let earthquakeVisualOffsetY = 0
 let earthquakeVisualOffsetZ = 0
-const earthquakeDuration = 10
+const earthquakeDuration = 20
+let earthquakeShakeStrength = 0
 const earthquakeCracks = []
 const crackWalls = collisionWalls
     // Tylko rzeczywiste ściany działowe widoczne w salach. Poprzednia lista
@@ -732,10 +733,23 @@ const addCrackStroke = (group, points, reveal, opacity = 0.92) => {
 const buildEarthquakeCracks = () => {
     if (earthquakeCracks.length) return
 
+    // Dziesięć sylwetek pęknięć. Parametry zmieniają kierunek, długość,
+    // zagęszczenie zygzaka oraz układ odnóg, więc ściany nie wyglądają jak
+    // pokryte kopiami tego samego wzoru.
+    const crackTypes = [
+        { lean: 0.02, sway: 0.10, rise: 0.22, joints: [4, 8], sides: [1, -1] },
+        { lean: -0.035, sway: 0.16, rise: 0.18, joints: [3, 6, 9], sides: [-1, 1, -1] },
+        { lean: 0.055, sway: 0.07, rise: 0.25, joints: [5], sides: [1] },
+        { lean: -0.015, sway: 0.22, rise: 0.17, joints: [2, 7], sides: [1, 1] },
+        { lean: 0.075, sway: 0.12, rise: 0.19, joints: [4, 6, 9], sides: [-1, 1, 1] },
+        { lean: -0.065, sway: 0.09, rise: 0.23, joints: [3, 8], sides: [-1, 1] },
+        { lean: 0.0, sway: 0.19, rise: 0.20, joints: [2, 5, 8], sides: [1, -1, 1] },
+        { lean: 0.04, sway: 0.14, rise: 0.16, joints: [4, 7, 10], sides: [-1, -1, 1] },
+        { lean: -0.045, sway: 0.11, rise: 0.27, joints: [6], sides: [1] },
+        { lean: 0.025, sway: 0.24, rise: 0.15, joints: [3, 5, 9], sides: [-1, 1, -1] }
+    ]
+
     crackWalls.forEach((wall, wallIndex) => {
-        // Grupa ma lokalny układ XY leżący dokładnie na płaszczyźnie ściany.
-        // Z=0 w grupie oznacza powierzchnię ściany; odsuwamy ją tylko o 8 mm,
-        // żeby uniknąć migotania z-fighting.
         const group = new THREE.Group()
         const surfaceOffset = wall.normal * 0.008
         if (wall.axis === 'z') {
@@ -748,38 +762,41 @@ const buildEarthquakeCracks = () => {
         scene.add(group)
 
         for (let crackIndex = 0; crackIndex < 2; crackIndex++) {
-            const seed = (wallIndex + 1) * 17 + crackIndex * 11
-            const baseAlong = THREE.MathUtils.lerp(wall.along[0], wall.along[1], 0.28 + crackIndex * 0.42)
-            const baseY = THREE.MathUtils.lerp(wall.y[0], wall.y[1], 0.18 + ((wallIndex + crackIndex) % 3) * 0.11)
+            const typeIndex = (wallIndex * 3 + crackIndex * 7) % crackTypes.length
+            const type = crackTypes[typeIndex]
+            const seed = (wallIndex + 1) * 17 + crackIndex * 11 + typeIndex * 5
+            const baseAlong = THREE.MathUtils.lerp(wall.along[0], wall.along[1], 0.27 + crackIndex * 0.44)
+            const baseY = THREE.MathUtils.lerp(wall.y[0], wall.y[1], 0.12 + ((wallIndex + typeIndex) % 4) * 0.08)
+            const segmentCount = 10 + (typeIndex % 3)
             const main = [new THREE.Vector3(baseAlong, baseY, 0)]
             let x = baseAlong
             let y = baseY
 
-            for (let segment = 1; segment <= 11; segment++) {
-                const sway = Math.sin(seed * 0.71 + segment * 1.83) * 0.13
-                    + Math.sin(seed * 0.29 + segment * 3.17) * 0.055
-                x += sway
-                y += 0.20 + 0.035 * Math.sin(seed + segment * 1.37)
+            for (let segment = 1; segment <= segmentCount; segment++) {
+                const irregular = Math.sin(seed * 0.71 + segment * (1.31 + typeIndex * 0.07))
+                    + 0.52 * Math.sin(seed * 0.29 + segment * (2.73 + typeIndex * 0.04))
+                x += type.lean + irregular * type.sway
+                y += type.rise * (0.82 + 0.18 * Math.sin(seed + segment * 1.37))
                 main.push(new THREE.Vector3(x, y, 0))
             }
 
             const revealBase = (wallIndex * 2 + crackIndex) / (crackWalls.length * 2)
             addCrackStroke(group, main, revealBase, 0.96)
 
-            // Krótkie, cieńsze optycznie odnogi wychodzą z głównej szczeliny.
-            ;[4, 7, 9].forEach((joint, branchIndex) => {
+            type.joints.forEach((rawJoint, branchIndex) => {
+                const joint = Math.min(rawJoint, main.length - 2)
                 const origin = main[joint]
-                const side = ((wallIndex + crackIndex + branchIndex) % 2) ? 1 : -1
+                const side = type.sides[branchIndex % type.sides.length]
                 const branch = [origin.clone()]
                 let bx = origin.x
                 let by = origin.y
-                const branchSegments = branchIndex === 1 ? 4 : 3
+                const branchSegments = 2 + ((typeIndex + branchIndex) % 4)
                 for (let segment = 1; segment <= branchSegments; segment++) {
-                    bx += side * (0.10 + 0.035 * Math.sin(seed + branchIndex * 2.1 + segment))
-                    by += 0.055 + 0.025 * Math.sin(seed * 0.5 + segment * 2.4)
+                    bx += side * (0.075 + type.sway * 0.28 + 0.025 * Math.sin(seed + branchIndex * 2.1 + segment))
+                    by += (typeIndex % 2 ? 0.045 : 0.075) + 0.02 * Math.sin(seed * 0.5 + segment * 2.4)
                     branch.push(new THREE.Vector3(bx, by, 0))
                 }
-                addCrackStroke(group, branch, revealBase + 0.035 + branchIndex * 0.018, 0.68)
+                addCrackStroke(group, branch, revealBase + 0.025 + branchIndex * 0.014, 0.66)
             })
         }
     })
@@ -809,6 +826,7 @@ const updateEarthquake = (deltaTime, elapsedTime) => {
     const progress = THREE.MathUtils.clamp((elapsedTime - earthquakeStartedAt) / earthquakeDuration, 0, 1)
     const strength = THREE.MathUtils.smoothstep(progress, 0, 1)
     const shake = strength * strength
+    earthquakeShakeStrength = shake
 
     // Mocniejsze, wieloczęstotliwościowe drgania. Składowe o różnych
     // częstotliwościach ograniczają wrażenie regularnego kołysania kamery.
@@ -862,6 +880,7 @@ const updateEarthquake = (deltaTime, elapsedTime) => {
         earthquakeVisualOffsetY = 0
         earthquakeVisualOffsetZ = 0
         earthquakeStartedAt = null
+        earthquakeShakeStrength = 0
         camera.rotation.z = 0
     }
 }
@@ -1206,10 +1225,18 @@ const floodStatusText = document.querySelector('.flood-status__text')
 const waterLevelStart = -0.12
 const waterLevelFull = 1.0
 // Match the water vertex shader: rotating the plane maps local y to world -z.
-const getWaterSurfaceHeight = (x, z, time) => currentWaterLevel
-    + Math.sin(x * 0.72 + time * 1.15) * 0.026
-    + Math.sin(-z * 1.07 - time * 0.82) * 0.018
-    + Math.sin((x - z) * 1.58 + time * 1.42) * 0.009
+const getWaterSurfaceHeight = (x, z, time) => {
+    const quake = earthquakeShakeStrength
+    return currentWaterLevel
+        + Math.sin(x * 0.72 + time * 1.15) * 0.026
+        + Math.sin(-z * 1.07 - time * 0.82) * 0.018
+        + Math.sin((x - z) * 1.58 + time * 1.42) * 0.009
+        + quake * (
+            Math.sin(x * 1.15 + time * 7.2) * 0.12
+            + Math.sin(-z * 1.38 + time * 9.1) * 0.09
+            + Math.sin((x - z) * 0.82 - time * 5.8) * 0.07
+        )
+}
 let floodActive = false
 let currentWaterLevel = waterLevelStart
 let targetWaterLevel = waterLevelStart
@@ -1228,10 +1255,12 @@ const waterMaterial = new THREE.ShaderMaterial({
         uFogDensity: { value: 0 },
         uFogColor: { value: fogColor },
         uDeepColor: { value: new THREE.Color(0x315b61) },
+        uEarthquake: { value: 0 },
         uSurfaceColor: { value: new THREE.Color(0x78a8a7) }
     },
     vertexShader: `
         uniform float uTime;
+        uniform float uEarthquake;
         varying vec3 vWorldPosition;
         varying vec3 vWorldNormal;
         varying float vWave;
@@ -1241,7 +1270,10 @@ const waterMaterial = new THREE.ShaderMaterial({
             float waveA = sin(position.x * 0.72 + uTime * 1.15) * 0.026;
             float waveB = sin(position.y * 1.07 - uTime * 0.82) * 0.018;
             float waveC = sin((position.x + position.y) * 1.58 + uTime * 1.42) * 0.009;
-            float wave = waveA + waveB + waveC;
+            float quakeA = sin(position.x * 1.15 + uTime * 7.2) * 0.12;
+            float quakeB = sin(position.y * 1.38 - uTime * 9.1) * 0.09;
+            float quakeC = sin((position.x + position.y) * 0.82 + uTime * 5.8) * 0.07;
+            float wave = waveA + waveB + waveC + (quakeA + quakeB + quakeC) * uEarthquake;
             displaced.z += wave;
 
             vec4 worldPosition = modelMatrix * vec4(displaced, 1.0);
@@ -1870,6 +1902,7 @@ const updateFlood = (deltaTime, elapsedTime) => {
     water.position.y = currentWaterLevel
     waterEdge.position.y = currentWaterLevel
     waterMaterial.uniforms.uTime.value = elapsedTime
+    waterMaterial.uniforms.uEarthquake.value = earthquakeShakeStrength
     waterMaterial.uniforms.uCameraPosition.value.copy(camera.position)
     waterMaterial.uniforms.uFogDensity.value = scene.fog.density
     const visibility = THREE.MathUtils.smoothstep(currentWaterLevel, waterLevelStart, waterLevelStart + 0.16)
@@ -2505,6 +2538,18 @@ const updateBlockPhysics = (deltaTime, elapsedTime) => {
         const touchesWater = currentWaterLevel > 0.015 && blockBottom < currentWaterLevel
         block.floating = touchesWater
         if (touchesWater) {
+            // Podczas trzęsienia powierzchnia wody wymusza na pływających
+            // klockach mocniejsze kołysanie i poziome szarpnięcia.
+            const quake = earthquakeShakeStrength
+            if (quake > 0) {
+                block.velocity.x += (Math.sin(elapsedTime * 7.2 + block.floatPhase) * 2.2
+                    + Math.sin(elapsedTime * 11.1 + block.floatPhase * 0.7) * 1.1) * quake * step
+                block.velocity.z += (Math.cos(elapsedTime * 8.6 + block.floatPhase * 1.3) * 2.0
+                    + Math.sin(elapsedTime * 12.4 + block.floatPhase) * 1.0) * quake * step
+                block.velocity.y += Math.sin(elapsedTime * 9.4 + block.floatPhase) * 3.4 * quake * step
+                block.angularVelocity.x += Math.sin(elapsedTime * 8.1 + block.floatPhase) * 0.45 * quake * step
+                block.angularVelocity.z += Math.cos(elapsedTime * 7.5 + block.floatPhase) * 0.45 * quake * step
+            }
             // Wyporność stabilizuje lekkie klocki częściowo ponad powierzchnią.
             const bob = Math.sin(elapsedTime * 1.55 + block.floatPhase) * 0.045
             const targetFloatY = currentWaterLevel + 0.28 + bob
