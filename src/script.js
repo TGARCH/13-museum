@@ -684,14 +684,34 @@ let earthquakeVisualOffsetY = 0
 let earthquakeVisualOffsetZ = 0
 const earthquakeDuration = 10
 const earthquakeCracks = []
-const crackWalls = [
-    { axis: 'z', face: -9.735, along: [-3.0, 3.0], y: [0.8, 4.45] },
-    { axis: 'z', face: 9.735, along: [-3.0, 3.0], y: [0.8, 4.35] },
-    { axis: 'x', face: -6.735, along: [-3.0, 3.0], y: [0.9, 4.4] },
-    { axis: 'x', face: 6.735, along: [-3.0, 3.0], y: [0.9, 4.35] },
-    { axis: 'z', face: -0.265, along: [-5.2, 5.2], y: [0.9, 4.2] },
-    { axis: 'x', face: 0.265, along: [-5.2, 5.2], y: [1.0, 4.35] }
-]
+const crackWalls = collisionWalls
+    // Tylko rzeczywiste ściany działowe widoczne w salach. Poprzednia lista
+    // zawierała płaszczyzny w osiach muzeum, których w części miejsc nie ma.
+    .filter((wall) => wall.halfX <= 5 && wall.halfZ <= 5)
+    .flatMap((wall) => {
+        if (wall.halfX > wall.halfZ) {
+            const min = wall.x - wall.halfX + 0.45
+            const max = wall.x + wall.halfX - 0.45
+            if (max <= min) return []
+            return [-1, 1].map((normal) => ({
+                axis: 'z',
+                face: wall.z + normal * wall.halfZ,
+                normal,
+                along: [min, max],
+                y: [0.45, 4.35]
+            }))
+        }
+        const min = wall.z - wall.halfZ + 0.45
+        const max = wall.z + wall.halfZ - 0.45
+        if (max <= min) return []
+        return [-1, 1].map((normal) => ({
+            axis: 'x',
+            face: wall.x + normal * wall.halfX,
+            normal,
+            along: [min, max],
+            y: [0.45, 4.35]
+        }))
+    })
 
 const addCrackStroke = (group, points, reveal, opacity = 0.92) => {
     const geometry = new THREE.BufferGeometry().setFromPoints(points)
@@ -717,13 +737,13 @@ const buildEarthquakeCracks = () => {
         // Z=0 w grupie oznacza powierzchnię ściany; odsuwamy ją tylko o 8 mm,
         // żeby uniknąć migotania z-fighting.
         const group = new THREE.Group()
-        const inward = wall.face > 0 ? -1 : 1
+        const surfaceOffset = wall.normal * 0.008
         if (wall.axis === 'z') {
-            group.position.set(0, 0, wall.face + inward * 0.008)
-            group.rotation.y = wall.face > 0 ? Math.PI : 0
+            group.position.set(0, 0, wall.face + surfaceOffset)
+            group.rotation.y = wall.normal < 0 ? Math.PI : 0
         } else {
-            group.position.set(wall.face + inward * 0.008, 0, 0)
-            group.rotation.y = wall.face > 0 ? -Math.PI / 2 : Math.PI / 2
+            group.position.set(wall.face + surfaceOffset, 0, 0)
+            group.rotation.y = wall.normal < 0 ? -Math.PI / 2 : Math.PI / 2
         }
         scene.add(group)
 
