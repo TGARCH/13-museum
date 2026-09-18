@@ -749,7 +749,10 @@ const buildEarthquakeCracks = () => {
         { lean: 0.025, sway: 0.24, rise: 0.15, joints: [3, 5, 9], sides: [-1, 1, -1] }
     ]
 
-    crackWalls.forEach((wall, wallIndex) => {
+    // Mniej pęknięć: wybieramy tylko część powierzchni, ale każde pęknięcie
+    // jest większe, bardziej rozgałęzione i ma mocniejszą sylwetkę.
+    const spectacularWalls = crackWalls.filter((wall, index) => index % 3 === 0)
+    spectacularWalls.forEach((wall, wallIndex) => {
         const group = new THREE.Group()
         const surfaceOffset = wall.normal * 0.008
         if (wall.axis === 'z') {
@@ -761,13 +764,13 @@ const buildEarthquakeCracks = () => {
         }
         scene.add(group)
 
-        for (let crackIndex = 0; crackIndex < 2; crackIndex++) {
+        for (let crackIndex = 0; crackIndex < 1; crackIndex++) {
             const typeIndex = (wallIndex * 3 + crackIndex * 7) % crackTypes.length
             const type = crackTypes[typeIndex]
             const seed = (wallIndex + 1) * 17 + crackIndex * 11 + typeIndex * 5
-            const baseAlong = THREE.MathUtils.lerp(wall.along[0], wall.along[1], 0.27 + crackIndex * 0.44)
+            const baseAlong = THREE.MathUtils.lerp(wall.along[0], wall.along[1], 0.46 + 0.08 * Math.sin(wallIndex * 1.7))
             const baseY = THREE.MathUtils.lerp(wall.y[0], wall.y[1], 0.12 + ((wallIndex + typeIndex) % 4) * 0.08)
-            const segmentCount = 10 + (typeIndex % 3)
+            const segmentCount = 15 + (typeIndex % 5)
             const main = [new THREE.Vector3(baseAlong, baseY, 0)]
             let x = baseAlong
             let y = baseY
@@ -776,27 +779,33 @@ const buildEarthquakeCracks = () => {
                 const irregular = Math.sin(seed * 0.71 + segment * (1.31 + typeIndex * 0.07))
                     + 0.52 * Math.sin(seed * 0.29 + segment * (2.73 + typeIndex * 0.04))
                 x += type.lean + irregular * type.sway
-                y += type.rise * (0.82 + 0.18 * Math.sin(seed + segment * 1.37))
+                y += type.rise * 1.12 * (0.82 + 0.18 * Math.sin(seed + segment * 1.37))
                 main.push(new THREE.Vector3(x, y, 0))
             }
 
-            const revealBase = (wallIndex * 2 + crackIndex) / (crackWalls.length * 2)
-            addCrackStroke(group, main, revealBase, 0.96)
+            const revealBase = wallIndex / Math.max(1, spectacularWalls.length)
+            addCrackStroke(group, main, revealBase, 1.0)
 
-            type.joints.forEach((rawJoint, branchIndex) => {
+            const spectacularJoints = Array.from(new Set([
+                ...type.joints,
+                Math.floor(segmentCount * 0.28),
+                Math.floor(segmentCount * 0.52),
+                Math.floor(segmentCount * 0.76)
+            ])).sort((a, b) => a - b)
+            spectacularJoints.forEach((rawJoint, branchIndex) => {
                 const joint = Math.min(rawJoint, main.length - 2)
                 const origin = main[joint]
                 const side = type.sides[branchIndex % type.sides.length]
                 const branch = [origin.clone()]
                 let bx = origin.x
                 let by = origin.y
-                const branchSegments = 2 + ((typeIndex + branchIndex) % 4)
+                const branchSegments = 4 + ((typeIndex + branchIndex) % 4)
                 for (let segment = 1; segment <= branchSegments; segment++) {
-                    bx += side * (0.075 + type.sway * 0.28 + 0.025 * Math.sin(seed + branchIndex * 2.1 + segment))
-                    by += (typeIndex % 2 ? 0.045 : 0.075) + 0.02 * Math.sin(seed * 0.5 + segment * 2.4)
+                    bx += side * (0.12 + type.sway * 0.42 + 0.04 * Math.sin(seed + branchIndex * 2.1 + segment))
+                    by += (typeIndex % 2 ? 0.06 : 0.10) + 0.03 * Math.sin(seed * 0.5 + segment * 2.4)
                     branch.push(new THREE.Vector3(bx, by, 0))
                 }
-                addCrackStroke(group, branch, revealBase + 0.025 + branchIndex * 0.014, 0.66)
+                addCrackStroke(group, branch, revealBase + 0.018 + branchIndex * 0.010, 0.82)
             })
         }
     })
